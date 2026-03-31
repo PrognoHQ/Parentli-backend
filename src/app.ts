@@ -13,6 +13,10 @@ import onboardingRoutes from "./modules/onboarding/routes";
 import settingsRoutes from "./modules/settings/routes";
 import categoryRoutes from "./modules/categories/routes";
 import bootstrapRoutes from "./modules/bootstrap/routes";
+import childrenRoutes from "./modules/children/routes";
+import custodyRoutes from "./modules/custody/routes";
+import familyCircleRoutes from "./modules/family-circle/routes";
+import emergencyCardRoutes from "./modules/emergency-card/routes";
 
 const app = express();
 
@@ -37,6 +41,10 @@ app.use("/api/onboarding", onboardingRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
+app.use("/api/children", childrenRoutes);
+app.use("/api/custody", custodyRoutes);
+app.use("/api/family-circle", familyCircleRoutes);
+app.use("/api/emergency-card", emergencyCardRoutes);
 
 app.use(errorHandler);
 

@@ -30,6 +30,30 @@ enum InviteStatus {
   revoked
 }
 
+// --- Phase 2 Enums ---
+enum FamilyCircleRole {
+  viewer
+  contributor
+  carer
+}
+
+enum FamilyCircleAccessType {
+  ongoing
+  custom_date
+}
+
+enum FamilyCircleMemberStatus {
+  pending
+  active
+  revoked
+  expired
+}
+
+enum ParentRole {
+  owner
+  coparent
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -51,6 +75,11 @@ model Profile {
   onboardingStates  OnboardingState[]
   userSettings      UserSettings[]
   createdCategories Category[]
+  createdChildren          Child[]                    @relation("CreatedChildren")
+  createdSchedules         CustodySchedule[]          @relation("CreatedSchedules")
+  invitedFamilyCircle      FamilyCircleMember[]       @relation("InvitedFamilyCircleMembers")
+  joinedFamilyCircle       FamilyCircleMember[]       @relation("JoinedFamilyCircleMembers")
+  familyCircleActivityLogs FamilyCircleActivityLog[]  @relation("FamilyCircleActivityActor")
 
   @@map("profiles")
 }
@@ -72,6 +101,16 @@ model Household {
   onboardingStates OnboardingState[]
   userSettings     UserSettings[]
   categories       Category[]
+  children                Child[]
+  childSchoolCares        ChildSchoolCare[]
+  childMedicals           ChildMedical[]
+  emergencyContacts       EmergencyContact[]
+  custodySchedules        CustodySchedule[]
+  custodyScheduleDays     CustodyScheduleDay[]
+  handoffPreferences      HandoffPreference[]
+  familyCircleMembers     FamilyCircleMember[]
+  familyCircleMemberChildren FamilyCircleMemberChild[]
+  familyCircleActivityLogs   FamilyCircleActivityLog[]
 
   @@map("households")
 }
@@ -170,4 +209,213 @@ model Category {
 
   @@unique([householdId, slug])
   @@map("categories")
+}
+
+// --- Phase 2: Children ---
+model Child {
+  id                 String   @id @default(uuid()) @db.Uuid
+  householdId        String   @map("household_id") @db.Uuid
+  firstName          String   @map("first_name")
+  lastName           String?  @map("last_name")
+  dob                DateTime @db.Date
+  emoji              String
+  color              String
+  photoUrl           String?  @map("photo_url")
+  allergyNote        String?  @map("allergy_note")
+  createdByProfileId String   @map("created_by_profile_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  household          Household                @relation(fields: [householdId], references: [id])
+  createdByProfile   Profile                  @relation("CreatedChildren", fields: [createdByProfileId], references: [id])
+  schoolCare         ChildSchoolCare?
+  medical            ChildMedical?
+  emergencyContacts  EmergencyContact[]
+  familyCircleLinks  FamilyCircleMemberChild[]
+
+  @@map("children")
+}
+
+// --- Phase 2: Child School/Care ---
+model ChildSchoolCare {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  childId     String   @unique @map("child_id") @db.Uuid
+  schoolName  String?  @map("school_name")
+  teacherName String?  @map("teacher_name")
+  hours       String?
+  address     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  child     Child     @relation(fields: [childId], references: [id])
+
+  @@map("child_school_care")
+}
+
+// --- Phase 2: Child Medical ---
+model ChildMedical {
+  id                String   @id @default(uuid()) @db.Uuid
+  householdId       String   @map("household_id") @db.Uuid
+  childId           String   @unique @map("child_id") @db.Uuid
+  pediatrician      String?
+  pediatricianPhone String?  @map("pediatrician_phone")
+  hospital          String?
+  bloodType         String?  @map("blood_type")
+  medications       Json     @default("[]")
+  allergies         Json     @default("[]")
+  insurance         Json?
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  child     Child     @relation(fields: [childId], references: [id])
+
+  @@map("child_medical")
+}
+
+// --- Phase 2: Emergency Contacts ---
+model EmergencyContact {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  childId     String   @map("child_id") @db.Uuid
+  name        String
+  relationship String
+  phone       String
+  initial     String?
+  color       String?
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  position    Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  child     Child     @relation(fields: [childId], references: [id])
+
+  @@map("emergency_contacts")
+}
+
+// --- Phase 2: Custody Schedules ---
+model CustodySchedule {
+  id                  String    @id @default(uuid()) @db.Uuid
+  householdId         String    @map("household_id") @db.Uuid
+  name                String
+  isActive            Boolean   @default(true) @map("is_active")
+  patternType         String?   @map("pattern_type")
+  firstDayOfWeek      Int       @default(1) @map("first_day_of_week") @db.SmallInt
+  handoffTimeDefault  String?   @map("handoff_time_default")
+  effectiveFrom       DateTime? @map("effective_from") @db.Date
+  effectiveTo         DateTime? @map("effective_to") @db.Date
+  createdByProfileId  String    @map("created_by_profile_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  household          Household            @relation(fields: [householdId], references: [id])
+  createdByProfile   Profile              @relation("CreatedSchedules", fields: [createdByProfileId], references: [id])
+  days               CustodyScheduleDay[]
+  handoffPreference  HandoffPreference?
+
+  @@map("custody_schedules")
+}
+
+// --- Phase 2: Custody Schedule Days ---
+model CustodyScheduleDay {
+  id                 String     @id @default(uuid()) @db.Uuid
+  householdId        String     @map("household_id") @db.Uuid
+  custodyScheduleId  String     @map("custody_schedule_id") @db.Uuid
+  weekIndex          Int        @map("week_index")
+  dayIndex           Int        @map("day_index")
+  assignedParentRole ParentRole @map("assigned_parent_role")
+  isHandoffDay       Boolean    @default(false) @map("is_handoff_day")
+  handoffTime        String?    @map("handoff_time")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  household       Household       @relation(fields: [householdId], references: [id])
+  custodySchedule CustodySchedule @relation(fields: [custodyScheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([custodyScheduleId, weekIndex, dayIndex])
+  @@map("custody_schedule_days")
+}
+
+// --- Phase 2: Handoff Preferences ---
+model HandoffPreference {
+  id                      String   @id @default(uuid()) @db.Uuid
+  householdId             String   @map("household_id") @db.Uuid
+  custodyScheduleId       String?  @unique @map("custody_schedule_id") @db.Uuid
+  remindersEnabled        Boolean  @default(true) @map("reminders_enabled")
+  reminderDayBefore       Boolean  @default(true) @map("reminder_day_before")
+  reminderTwoHoursBefore  Boolean  @default(true) @map("reminder_two_hours_before")
+  defaultLocation         String?  @map("default_location")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  household       Household        @relation(fields: [householdId], references: [id])
+  custodySchedule CustodySchedule? @relation(fields: [custodyScheduleId], references: [id])
+
+  @@map("handoff_preferences")
+}
+
+// --- Phase 2: Family Circle Members ---
+model FamilyCircleMember {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  householdId        String                    @map("household_id") @db.Uuid
+  name               String
+  email              String?
+  phone              String?
+  relationship       String
+  role               FamilyCircleRole
+  accessType         FamilyCircleAccessType    @map("access_type")
+  accessStartsAt     DateTime?                 @map("access_starts_at")
+  accessEndsAt       DateTime?                 @map("access_ends_at")
+  status             FamilyCircleMemberStatus  @default(pending)
+  inviteCode         String?                   @unique @map("invite_code")
+  invitedByProfileId String?                   @map("invited_by_profile_id") @db.Uuid
+  joinedProfileId    String?                   @map("joined_profile_id") @db.Uuid
+  avatarUrl          String?                   @map("avatar_url")
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+
+  household          Household                  @relation(fields: [householdId], references: [id])
+  invitedByProfile   Profile?                   @relation("InvitedFamilyCircleMembers", fields: [invitedByProfileId], references: [id])
+  joinedProfile      Profile?                   @relation("JoinedFamilyCircleMembers", fields: [joinedProfileId], references: [id])
+  childAssignments   FamilyCircleMemberChild[]
+  activityLogs       FamilyCircleActivityLog[]
+
+  @@map("family_circle_members")
+}
+
+// --- Phase 2: Family Circle Member ↔ Children ---
+model FamilyCircleMemberChild {
+  id                   String   @id @default(uuid()) @db.Uuid
+  householdId          String   @map("household_id") @db.Uuid
+  familyCircleMemberId String   @map("family_circle_member_id") @db.Uuid
+  childId              String   @map("child_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  household          Household          @relation(fields: [householdId], references: [id])
+  familyCircleMember FamilyCircleMember @relation(fields: [familyCircleMemberId], references: [id], onDelete: Cascade)
+  child              Child              @relation(fields: [childId], references: [id])
+
+  @@unique([familyCircleMemberId, childId])
+  @@map("family_circle_member_children")
+}
+
+// --- Phase 2: Family Circle Activity Log ---
+model FamilyCircleActivityLog {
+  id                   String   @id @default(uuid()) @db.Uuid
+  householdId          String   @map("household_id") @db.Uuid
+  familyCircleMemberId String   @map("family_circle_member_id") @db.Uuid
+  childId              String?  @map("child_id") @db.Uuid
+  actorProfileId       String?  @map("actor_profile_id") @db.Uuid
+  action               String
+  metadata             Json     @default("{}")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  household          Household          @relation(fields: [householdId], references: [id])
+  familyCircleMember FamilyCircleMember @relation(fields: [familyCircleMemberId], references: [id])
+  actorProfile       Profile?           @relation("FamilyCircleActivityActor", fields: [actorProfileId], references: [id])
+
+  @@map("family_circle_activity_log")
 }
