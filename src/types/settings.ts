@@ -112,8 +112,8 @@ export const DEFAULT_CATEGORIES: DefaultCategory[] = [
   { slug: "health", label: "Health", emoji: "🩺", color: "hsl(21, 50%, 57%)", position: 1 },
   { slug: "education", label: "Education", emoji: "📚", color: "hsl(204, 35%, 75%)", position: 2 },
   { slug: "clothing", label: "Clothing", emoji: "👕", color: "hsl(213, 25%, 23%)", position: 3 },
-  { slug: "food", label: "Food", emoji: "🍎", color: "#E8A87C", position: 4 },
+  { slug: "food", label: "Food", emoji: "🍎", color: "hsl(22, 65%, 70%)", position: 4 },
   { slug: "activity", label: "Activity", emoji: "⚽", color: "hsl(39, 56%, 58%)", position: 5 },
-  { slug: "transport", label: "Transport", emoji: "🚗", color: "#8B9DC3", position: 6 },
-  { slug: "other", label: "Other", emoji: "📦", color: "#9CA3AF", position: 7 },
+  { slug: "transport", label: "Transport", emoji: "🚗", color: "hsl(220, 24%, 65%)", position: 6 },
+  { slug: "other", label: "Other", emoji: "📦", color: "hsl(220, 9%, 63%)", position: 7 },
 ];

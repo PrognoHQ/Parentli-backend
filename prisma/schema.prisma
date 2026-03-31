@@ -146,6 +146,7 @@ model UserSettings {
   household Household @relation(fields: [householdId], references: [id])
   profile   Profile?  @relation(fields: [profileId], references: [id])
 
+  @@unique([householdId, profileId])
   @@map("user_settings")
 }
 

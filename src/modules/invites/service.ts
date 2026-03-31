@@ -5,6 +5,57 @@ import { DEFAULT_SETTINGS } from "../../types/settings";
 
 const INVITE_EXPIRY_HOURS = 72;
 
+export async function listInvites(householdId: string) {
+  const invites = await prisma.coparentInvite.findMany({
+    where: { householdId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      inviteCode: true,
+      inviteEmail: true,
+      status: true,
+      expiresAt: true,
+      createdAt: true,
+      sender: { select: { firstName: true, lastName: true } },
+      acceptor: { select: { firstName: true, lastName: true } },
+    },
+  });
+
+  return invites.map((inv) => ({
+    id: inv.id,
+    inviteCode: inv.inviteCode,
+    inviteEmail: inv.inviteEmail,
+    status: new Date() > inv.expiresAt && inv.status === "pending" ? "expired" : inv.status,
+    expiresAt: inv.expiresAt,
+    createdAt: inv.createdAt,
+    invitedBy: `${inv.sender.firstName} ${inv.sender.lastName}`,
+    acceptedBy: inv.acceptor
+      ? `${inv.acceptor.firstName} ${inv.acceptor.lastName}`
+      : null,
+  }));
+}
+
+export async function revokeInvite(code: string, householdId: string) {
+  const invite = await prisma.coparentInvite.findUnique({
+    where: { inviteCode: code },
+  });
+
+  if (!invite || invite.householdId !== householdId) {
+    throw new AppError("Invite not found.", 404);
+  }
+
+  if (invite.status !== "pending") {
+    throw new AppError(`Cannot revoke invite that is ${invite.status}.`, 400);
+  }
+
+  await prisma.coparentInvite.update({
+    where: { id: invite.id },
+    data: { status: "revoked" },
+  });
+
+  return { success: true };
+}
+
 export async function createInvite(
   householdId: string,
   invitedByProfileId: string,

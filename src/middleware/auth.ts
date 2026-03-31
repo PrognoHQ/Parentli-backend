@@ -1,8 +1,7 @@
 import { Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AuthenticatedRequest, AppError, JwtPayload } from "../types";
-
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
+import { JWT_SECRET } from "../lib/config";
 
 export function authMiddleware(
   req: AuthenticatedRequest,

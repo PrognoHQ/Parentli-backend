@@ -1,10 +1,8 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../../lib/prisma";
+import { JWT_SECRET, JWT_EXPIRES_IN } from "../../lib/config";
 import { AppError, JwtPayload } from "../../types";
-
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 
 function signToken(profileId: string, email: string): string {
   const payload: JwtPayload = { sub: profileId, email };
