@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum HouseholdStatus {
+  active
+  archived
+}
+
+enum MemberRole {
+  owner
+  coparent
+}
+
+enum MemberStatus {
+  pending
+  active
+  removed
+}
+
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+// --- Profiles ---
+// No household_id - profiles are cross-household
+model Profile {
+  id           String   @id @default(uuid()) @db.Uuid
+  authUserId   String?  @unique @map("auth_user_id")
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  phone        String?
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  householdMembers  HouseholdMember[]
+  createdHouseholds Household[]        @relation("CreatedByProfile")
+  sentInvites       CoparentInvite[]   @relation("InviteSender")
+  acceptedInvites   CoparentInvite[]   @relation("InviteAcceptor")
+  onboardingStates  OnboardingState[]
+  userSettings      UserSettings[]
+  createdCategories Category[]
+
+  @@map("profiles")
+}
+
+// --- Households ---
+model Household {
+  id                 String          @id @default(uuid()) @db.Uuid
+  name               String
+  createdBy          String          @map("created_by") @db.Uuid
+  status             HouseholdStatus @default(active)
+  timezone           String?
+  handoffTimeDefault String?         @map("handoff_time_default")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  creator          Profile           @relation("CreatedByProfile", fields: [createdBy], references: [id])
+  members          HouseholdMember[]
+  invites          CoparentInvite[]
+  onboardingStates OnboardingState[]
+  userSettings     UserSettings[]
+  categories       Category[]
+
+  @@map("households")
+}
+
+// --- Household Members ---
+model HouseholdMember {
+  id          String       @id @default(uuid()) @db.Uuid
+  householdId String       @map("household_id") @db.Uuid
+  profileId   String       @map("profile_id") @db.Uuid
+  role        MemberRole   @default(coparent)
+  status      MemberStatus @default(active)
+  joinedAt    DateTime     @default(now()) @map("joined_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  profile   Profile   @relation(fields: [profileId], references: [id])
+
+  @@unique([householdId, profileId])
+  @@map("household_members")
+}
+
+// --- Co-parent Invites ---
+model CoparentInvite {
+  id          String       @id @default(uuid()) @db.Uuid
+  householdId String       @map("household_id") @db.Uuid
+  invitedBy   String       @map("invited_by") @db.Uuid
+  inviteCode  String       @unique @map("invite_code")
+  inviteEmail String?      @map("invite_email")
+  status      InviteStatus @default(pending)
+  expiresAt   DateTime     @map("expires_at")
+  acceptedBy  String?      @map("accepted_by") @db.Uuid
+  acceptedAt  DateTime?    @map("accepted_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  sender    Profile   @relation("InviteSender", fields: [invitedBy], references: [id])
+  acceptor  Profile?  @relation("InviteAcceptor", fields: [acceptedBy], references: [id])
+
+  @@map("coparent_invites")
+}
+
+// --- Onboarding State ---
+model OnboardingState {
+  id             String   @id @default(uuid()) @db.Uuid
+  householdId    String   @map("household_id") @db.Uuid
+  profileId      String   @map("profile_id") @db.Uuid
+  currentStep    String   @default("profile") @map("current_step")
+  completedSteps Json     @default("[]") @map("completed_steps")
+  isComplete     Boolean  @default(false) @map("is_complete")
+  payload        Json     @default("{}") @map("payload")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  profile   Profile   @relation(fields: [profileId], references: [id])
+
+  @@unique([householdId, profileId])
+  @@map("onboarding_state")
+}
+
+// --- User Settings ---
+model UserSettings {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  profileId   String?  @map("profile_id") @db.Uuid
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  profile   Profile?  @relation(fields: [profileId], references: [id])
+
+  @@map("user_settings")
+}
+
+// --- Categories ---
+model Category {
+  id         String    @id @default(uuid()) @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  label      String
+  slug       String
+  emoji      String
+  color      String
+  position   Int       @default(0)
+  isDefault  Boolean   @default(true) @map("is_default")
+  archivedAt DateTime? @map("archived_at")
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  creator   Profile   @relation(fields: [createdBy], references: [id])
+
+  @@unique([householdId, slug])
+  @@map("categories")
+}
