@@ -26,8 +26,8 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
 }
 
 export async function getSettings(profileId: string, householdId: string) {
-  const record = await prisma.userSettings.findFirst({
-    where: { profileId, householdId },
+  const record = await prisma.userSettings.findUnique({
+    where: { householdId_profileId: { householdId, profileId } },
   });
 
   if (!record) {
@@ -42,8 +42,8 @@ export async function updateSettings(
   householdId: string,
   partialSettings: Record<string, unknown>
 ) {
-  const record = await prisma.userSettings.findFirst({
-    where: { profileId, householdId },
+  const record = await prisma.userSettings.findUnique({
+    where: { householdId_profileId: { householdId, profileId } },
   });
 
   if (!record) {

@@ -13,13 +13,27 @@ export function tenantMiddleware(options?: { optional?: boolean }) {
         return next(new AppError("Authentication required.", 401));
       }
 
-      const membership = await prisma.householdMember.findFirst({
-        where: {
-          profileId: req.userId,
-          status: "active",
-        },
-        orderBy: { joinedAt: "asc" },
-      });
+      const requestedHouseholdId = req.headers["x-household-id"] as
+        | string
+        | undefined;
+
+      const membership = requestedHouseholdId
+        ? await prisma.householdMember.findUnique({
+            where: {
+              householdId_profileId: {
+                householdId: requestedHouseholdId,
+                profileId: req.userId,
+              },
+              status: "active",
+            },
+          })
+        : await prisma.householdMember.findFirst({
+            where: {
+              profileId: req.userId,
+              status: "active",
+            },
+            orderBy: { joinedAt: "asc" },
+          });
 
       if (!membership) {
         if (options?.optional) {
