@@ -127,6 +127,15 @@ export async function upsertHandoffPreferences(
     defaultLocation?: string | null;
   }
 ) {
+  if (data.custodyScheduleId) {
+    const schedule = await prisma.custodySchedule.findFirst({
+      where: { id: data.custodyScheduleId, householdId },
+    });
+    if (!schedule) {
+      throw new AppError("Custody schedule not found in this household.", 404);
+    }
+  }
+
   const existing = await prisma.handoffPreference.findFirst({
     where: { householdId },
   });
