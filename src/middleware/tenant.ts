@@ -17,6 +17,12 @@ export function tenantMiddleware(options?: { optional?: boolean }) {
         | string
         | undefined;
 
+      if (!requestedHouseholdId && !options?.optional) {
+        return next(
+          new AppError("x-household-id header is required.", 400)
+        );
+      }
+
       const membership = requestedHouseholdId
         ? await prisma.householdMember.findUnique({
             where: {
@@ -27,13 +33,7 @@ export function tenantMiddleware(options?: { optional?: boolean }) {
               status: "active",
             },
           })
-        : await prisma.householdMember.findFirst({
-            where: {
-              profileId: req.userId,
-              status: "active",
-            },
-            orderBy: { joinedAt: "asc" },
-          });
+        : null;
 
       if (!membership) {
         if (options?.optional) {

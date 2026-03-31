@@ -48,7 +48,11 @@ export async function listMembers(
   try {
     if (!req.householdId) throw new AppError("No household.", 403);
     requireParentRole(req);
-    const members = await familyCircleService.listMembers(req.householdId);
+    const statusFilter = req.query.status as string | undefined;
+    const members = await familyCircleService.listMembers(
+      req.householdId,
+      statusFilter
+    );
     res.json(members);
   } catch (err) {
     next(err);

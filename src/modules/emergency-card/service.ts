@@ -2,6 +2,17 @@ import { prisma } from "../../lib/prisma";
 import { AppError } from "../../types";
 import { hasFamilyCircleCapability } from "../../lib/permissions";
 
+function isAccessExpired(member: {
+  accessType: string;
+  accessEndsAt: Date | null;
+}): boolean {
+  return (
+    member.accessType === "custom_date" &&
+    member.accessEndsAt !== null &&
+    member.accessEndsAt < new Date()
+  );
+}
+
 interface EmergencyCardContact {
   id: string;
   name: string;
@@ -118,6 +129,10 @@ export async function getEmergencyCardForFamilyCircle(
 
   if (!member) {
     throw new AppError("Family Circle member not found.", 404);
+  }
+
+  if (isAccessExpired(member)) {
+    throw new AppError("Family Circle member access has expired.", 403);
   }
 
   if (!hasFamilyCircleCapability(member.role, "emergency:read")) {
