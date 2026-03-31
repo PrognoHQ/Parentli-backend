@@ -8,6 +8,17 @@ import {
 
 // ---------- helpers ----------
 
+function isAccessExpired(member: {
+  accessType: string;
+  accessEndsAt: Date | null;
+}): boolean {
+  return (
+    member.accessType === "custom_date" &&
+    member.accessEndsAt !== null &&
+    member.accessEndsAt < new Date()
+  );
+}
+
 async function verifyMemberInHousehold(
   memberId: string,
   householdId: string
@@ -126,9 +137,16 @@ export async function createMember(
   return member;
 }
 
-export async function listMembers(householdId: string) {
+export async function listMembers(
+  householdId: string,
+  statusFilter?: string
+) {
+  const where: Record<string, unknown> = { householdId };
+  if (statusFilter) {
+    where.status = statusFilter;
+  }
   return prisma.familyCircleMember.findMany({
-    where: { householdId },
+    where,
     orderBy: { createdAt: "asc" },
     include: {
       childAssignments: {
@@ -179,7 +197,8 @@ export async function updateMember(
 
   if (
     existing.status === "revoked" ||
-    existing.status === "expired"
+    existing.status === "expired" ||
+    isAccessExpired(existing)
   ) {
     throw new AppError("Cannot update a revoked or expired member.", 400);
   }
@@ -276,7 +295,11 @@ export async function assignChildren(
 ) {
   const member = await verifyMemberInHousehold(memberId, householdId);
 
-  if (member.status === "revoked" || member.status === "expired") {
+  if (
+    member.status === "revoked" ||
+    member.status === "expired" ||
+    isAccessExpired(member)
+  ) {
     throw new AppError(
       "Cannot assign children to a revoked or expired member.",
       400

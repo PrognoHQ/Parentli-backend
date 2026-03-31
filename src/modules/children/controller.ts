@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, AppError } from "../../types";
 import * as childrenService from "./service";
+import { medicalUpsertSchema } from "./validation";
 
 // ---------- children ----------
 
@@ -125,10 +126,19 @@ export async function upsertMedical(
 ): Promise<void> {
   try {
     if (!req.householdId) throw new AppError("No household.", 403);
+
+    const parsed = medicalUpsertSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Invalid medical data: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
     const result = await childrenService.upsertMedical(
       req.params.id as string,
       req.householdId,
-      req.body
+      parsed.data
     );
     res.json(result);
   } catch (err) {
