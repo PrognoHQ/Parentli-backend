@@ -54,6 +54,76 @@ enum ParentRole {
   coparent
 }
 
+// --- Phase 3 Enums ---
+enum EventChildScope {
+  both
+  single
+}
+
+enum EventCategory {
+  activity
+  health
+  school
+  handoff
+  other
+}
+
+enum EventHealthSubType {
+  routine
+  specialist
+  emergency
+}
+
+enum EventRecurrenceType {
+  none
+  daily
+  weekly
+  biweekly
+  monthly
+}
+
+enum EventApprovalStatus {
+  none
+  pending
+  approved
+  rejected
+  auto_approved
+}
+
+enum EventTimelineEntryType {
+  created
+  approval_requested
+  approved
+  rejected
+  auto_approved
+  updated
+  counter_proposed
+}
+
+enum EventTimelineColor {
+  sage
+  gold
+  terracotta
+  muted
+}
+
+enum EventApprovalRequestStatus {
+  pending
+  approved
+  rejected
+  auto_approved
+  cancelled
+}
+
+enum EventNotificationType {
+  event_created
+  approval_requested
+  event_approved
+  event_rejected
+  event_auto_approved
+  event_updated
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -80,6 +150,18 @@ model Profile {
   invitedFamilyCircle      FamilyCircleMember[]       @relation("InvitedFamilyCircleMembers")
   joinedFamilyCircle       FamilyCircleMember[]       @relation("JoinedFamilyCircleMembers")
   familyCircleActivityLogs FamilyCircleActivityLog[]  @relation("FamilyCircleActivityActor")
+
+  // Phase 3: Events
+  createdEvents              Event[]                 @relation("EventCreator")
+  updatedEvents              Event[]                 @relation("EventUpdater")
+  approvedEvents             Event[]                 @relation("EventApprover")
+  rejectedEvents             Event[]                 @relation("EventRejecter")
+  checkedChecklistItems      EventChecklistItem[]    @relation("ChecklistChecker")
+  createdChecklistItems      EventChecklistItem[]    @relation("ChecklistCreator")
+  actorTimelineEntries       EventTimelineEntry[]    @relation("TimelineActor")
+  requestedApprovalRequests  EventApprovalRequest[]  @relation("ApprovalRequester")
+  targetedApprovalRequests   EventApprovalRequest[]  @relation("ApprovalTarget")
+  resolvedApprovalRequests   EventApprovalRequest[]  @relation("ApprovalResolver")
 
   @@map("profiles")
 }
@@ -111,6 +193,13 @@ model Household {
   familyCircleMembers     FamilyCircleMember[]
   familyCircleMemberChildren FamilyCircleMemberChild[]
   familyCircleActivityLogs   FamilyCircleActivityLog[]
+
+  // Phase 3: Events
+  events                   Event[]
+  eventChecklistItems      EventChecklistItem[]
+  eventTimelineEntries     EventTimelineEntry[]
+  eventApprovalRequests    EventApprovalRequest[]
+  eventNotifications       EventNotification[]
 
   @@map("households")
 }
@@ -232,6 +321,7 @@ model Child {
   medical            ChildMedical?
   emergencyContacts  EmergencyContact[]
   familyCircleLinks  FamilyCircleMemberChild[]
+  events             Event[]                    @relation("EventPrimaryChild")
 
   @@map("children")
 }
@@ -386,7 +476,7 @@ model FamilyCircleMember {
   @@map("family_circle_members")
 }
 
-// --- Phase 2: Family Circle Member ↔ Children ---
+// --- Phase 2: Family Circle Member <-> Children ---
 model FamilyCircleMemberChild {
   id                   String   @id @default(uuid()) @db.Uuid
   householdId          String   @map("household_id") @db.Uuid
@@ -418,4 +508,145 @@ model FamilyCircleActivityLog {
   actorProfile       Profile?           @relation("FamilyCircleActivityActor", fields: [actorProfileId], references: [id])
 
   @@map("family_circle_activity_log")
+}
+
+// --- Phase 3: Events ---
+model Event {
+  id                      String               @id @default(uuid()) @db.Uuid
+  householdId             String               @map("household_id") @db.Uuid
+  createdByProfileId      String               @map("created_by_profile_id") @db.Uuid
+  updatedByProfileId      String?              @map("updated_by_profile_id") @db.Uuid
+  title                   String
+  emoji                   String
+  childScope              EventChildScope      @map("child_scope")
+  primaryChildId          String?              @map("primary_child_id") @db.Uuid
+  category                EventCategory
+  healthSubType           EventHealthSubType?  @map("health_sub_type")
+  startAt                 DateTime             @map("start_at")
+  endAt                   DateTime             @map("end_at")
+  allDay                  Boolean              @default(false) @map("all_day")
+  location                String?
+  notes                   String?
+  notify                  Boolean              @default(true)
+  recurrenceType          EventRecurrenceType  @default(none) @map("recurrence_type")
+  recurrenceUntil         DateTime?            @map("recurrence_until")
+  recurrenceParentEventId String?              @map("recurrence_parent_event_id") @db.Uuid
+  approvalStatus          EventApprovalStatus  @default(none) @map("approval_status")
+  approvalDeadlineAt      DateTime?            @map("approval_deadline_at")
+  approvedAt              DateTime?            @map("approved_at")
+  approvedByProfileId     String?              @map("approved_by_profile_id") @db.Uuid
+  autoApprovedAt          DateTime?            @map("auto_approved_at")
+  rejectedAt              DateTime?            @map("rejected_at")
+  rejectedByProfileId     String?              @map("rejected_by_profile_id") @db.Uuid
+  rejectionReason         String?              @map("rejection_reason")
+  rejectionCounterType    String?              @map("rejection_counter_type")
+  rejectionCounterValue   String?              @map("rejection_counter_value")
+  isDeleted               Boolean              @default(false) @map("is_deleted")
+  createdAt               DateTime             @default(now()) @map("created_at")
+  updatedAt               DateTime             @updatedAt @map("updated_at")
+
+  household          Household              @relation(fields: [householdId], references: [id])
+  createdByProfile   Profile                @relation("EventCreator", fields: [createdByProfileId], references: [id])
+  updatedByProfile   Profile?               @relation("EventUpdater", fields: [updatedByProfileId], references: [id])
+  approvedByProfile  Profile?               @relation("EventApprover", fields: [approvedByProfileId], references: [id])
+  rejectedByProfile  Profile?               @relation("EventRejecter", fields: [rejectedByProfileId], references: [id])
+  primaryChild       Child?                 @relation("EventPrimaryChild", fields: [primaryChildId], references: [id])
+  recurrenceParent   Event?                 @relation("RecurrenceParent", fields: [recurrenceParentEventId], references: [id])
+  recurrenceChildren Event[]                @relation("RecurrenceParent")
+  checklistItems     EventChecklistItem[]
+  timelineEntries    EventTimelineEntry[]
+  approvalRequests   EventApprovalRequest[]
+  notifications      EventNotification[]
+
+  @@index([householdId, startAt])
+  @@index([householdId, approvalStatus])
+  @@index([recurrenceParentEventId])
+  @@map("events")
+}
+
+// --- Phase 3: Event Checklist Items ---
+model EventChecklistItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  householdId        String    @map("household_id") @db.Uuid
+  eventId            String    @map("event_id") @db.Uuid
+  text               String
+  checked            Boolean   @default(false)
+  checkedAt          DateTime? @map("checked_at")
+  checkedByProfileId String?   @map("checked_by_profile_id") @db.Uuid
+  position           Int       @default(0)
+  createdByProfileId String?   @map("created_by_profile_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  household        Household @relation(fields: [householdId], references: [id])
+  event            Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  checkedByProfile Profile?  @relation("ChecklistChecker", fields: [checkedByProfileId], references: [id])
+  createdByProfile Profile?  @relation("ChecklistCreator", fields: [createdByProfileId], references: [id])
+
+  @@index([eventId])
+  @@map("event_checklist_items")
+}
+
+// --- Phase 3: Event Timeline Entries ---
+model EventTimelineEntry {
+  id             String                 @id @default(uuid()) @db.Uuid
+  householdId    String                 @map("household_id") @db.Uuid
+  eventId        String                 @map("event_id") @db.Uuid
+  actorProfileId String?                @map("actor_profile_id") @db.Uuid
+  entryType      EventTimelineEntryType @map("entry_type")
+  label          String
+  detail         String?
+  color          EventTimelineColor
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  household    Household @relation(fields: [householdId], references: [id])
+  event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  actorProfile Profile?  @relation("TimelineActor", fields: [actorProfileId], references: [id])
+
+  @@index([eventId])
+  @@map("event_timeline_entries")
+}
+
+// --- Phase 3: Event Approval Requests ---
+model EventApprovalRequest {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  householdId          String                     @map("household_id") @db.Uuid
+  eventId              String                     @map("event_id") @db.Uuid
+  requestedByProfileId String                     @map("requested_by_profile_id") @db.Uuid
+  requestedToProfileId String?                    @map("requested_to_profile_id") @db.Uuid
+  status               EventApprovalRequestStatus @default(pending)
+  deadlineAt           DateTime                   @map("deadline_at")
+  resolvedAt           DateTime?                  @map("resolved_at")
+  resolvedByProfileId  String?                    @map("resolved_by_profile_id") @db.Uuid
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+
+  household          Household @relation(fields: [householdId], references: [id])
+  event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  requestedByProfile Profile   @relation("ApprovalRequester", fields: [requestedByProfileId], references: [id])
+  requestedToProfile Profile?  @relation("ApprovalTarget", fields: [requestedToProfileId], references: [id])
+  resolvedByProfile  Profile?  @relation("ApprovalResolver", fields: [resolvedByProfileId], references: [id])
+
+  @@index([eventId, status])
+  @@index([requestedToProfileId, status])
+  @@map("event_approval_requests")
+}
+
+// --- Phase 3: Event Notifications ---
+model EventNotification {
+  id              String                @id @default(uuid()) @db.Uuid
+  householdId     String                @map("household_id") @db.Uuid
+  eventId         String                @map("event_id") @db.Uuid
+  type            EventNotificationType
+  targetProfileId String?               @map("target_profile_id") @db.Uuid
+  payload         Json                  @default("{}")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  processedAt     DateTime?             @map("processed_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([processedAt])
+  @@map("event_notifications")
 }

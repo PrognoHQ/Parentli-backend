@@ -17,6 +17,7 @@ import childrenRoutes from "./modules/children/routes";
 import custodyRoutes from "./modules/custody/routes";
 import familyCircleRoutes from "./modules/family-circle/routes";
 import emergencyCardRoutes from "./modules/emergency-card/routes";
+import eventRoutes from "./modules/events/routes";
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use("/api/children", childrenRoutes);
 app.use("/api/custody", custodyRoutes);
 app.use("/api/family-circle", familyCircleRoutes);
 app.use("/api/emergency-card", emergencyCardRoutes);
+app.use("/api/events", eventRoutes);
 
 app.use(errorHandler);
 
