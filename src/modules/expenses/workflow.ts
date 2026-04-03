@@ -63,9 +63,10 @@ export async function approveExpense(
   const now = new Date();
   const approverName = approver?.firstName ?? "co-parent";
 
-  const [updated] = await prisma.$transaction([
-    prisma.expense.update({
-      where: { id: expenseId },
+  const updated = await prisma.$transaction(async (tx) => {
+    // Conditional update: only succeeds if expense is still awaiting
+    const result = await tx.expense.updateMany({
+      where: { id: expenseId, status: "awaiting" },
       data: {
         status: "approved",
         approvedAt: now,
@@ -74,9 +75,16 @@ export async function approveExpense(
         rejectedByProfileId: null,
         rejectionReason: null,
       },
-      include: EXPENSE_INCLUDE,
-    }),
-    prisma.expenseTimelineEntry.create({
+    });
+
+    if (result.count === 0) {
+      throw new AppError(
+        "Expense was already resolved by another user.",
+        409
+      );
+    }
+
+    await tx.expenseTimelineEntry.create({
       data: {
         householdId,
         expenseId,
@@ -85,8 +93,13 @@ export async function approveExpense(
         label: `Approved by ${approverName}`,
         color: "sage",
       },
-    }),
-  ]);
+    });
+
+    return tx.expense.findUniqueOrThrow({
+      where: { id: expenseId },
+      include: EXPENSE_INCLUDE,
+    });
+  });
 
   return updated;
 }
@@ -140,9 +153,10 @@ export async function rejectExpense(
     ? `${reason}: ${detail}`
     : reason;
 
-  const [updated] = await prisma.$transaction([
-    prisma.expense.update({
-      where: { id: expenseId },
+  const updated = await prisma.$transaction(async (tx) => {
+    // Conditional update: only succeeds if expense is still awaiting
+    const result = await tx.expense.updateMany({
+      where: { id: expenseId, status: "awaiting" },
       data: {
         status: "rejected",
         rejectedAt: now,
@@ -151,9 +165,16 @@ export async function rejectExpense(
         approvedAt: null,
         approvedByProfileId: null,
       },
-      include: EXPENSE_INCLUDE,
-    }),
-    prisma.expenseTimelineEntry.create({
+    });
+
+    if (result.count === 0) {
+      throw new AppError(
+        "Expense was already resolved by another user.",
+        409
+      );
+    }
+
+    await tx.expenseTimelineEntry.create({
       data: {
         householdId,
         expenseId,
@@ -163,8 +184,13 @@ export async function rejectExpense(
         detail: timelineDetail,
         color: "terracotta",
       },
-    }),
-  ]);
+    });
+
+    return tx.expense.findUniqueOrThrow({
+      where: { id: expenseId },
+      include: EXPENSE_INCLUDE,
+    });
+  });
 
   return updated;
 }
