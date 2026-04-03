@@ -11,6 +11,8 @@ const tenant = tenantMiddleware();
 const canRead = requireCapability("expenses:read");
 const canWrite = requireCapability("expenses:write");
 const canApprove = requireCapability("expenses:approve");
+const canSettle = requireCapability("expenses:settle");
+const canReimburse = requireCapability("expenses:reimburse");
 
 // Named routes must be defined before /:id to avoid route conflict
 router.get("/balance/summary", auth, tenant, canRead, controller.balanceSummary);
@@ -23,5 +25,8 @@ router.put("/:id", auth, tenant, canWrite, controller.update);
 router.delete("/:id", auth, tenant, canWrite, controller.remove);
 router.post("/:id/approve", auth, tenant, canApprove, controller.approve);
 router.post("/:id/reject", auth, tenant, canApprove, controller.reject);
+router.put("/:id/reimbursement", auth, tenant, canReimburse, controller.updateReimbursement);
+router.post("/:id/settle", auth, tenant, canSettle, controller.settle);
+router.put("/:id/settlement", auth, tenant, canSettle, controller.updateSettlement);
 
 export default router;
