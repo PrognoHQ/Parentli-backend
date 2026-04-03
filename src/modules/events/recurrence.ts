@@ -22,8 +22,6 @@ interface RecurrenceBaseEvent {
   notify: boolean;
   recurrenceType: "daily" | "weekly" | "biweekly" | "monthly";
   recurrenceUntil: Date | null;
-  approvalStatus: "none" | "pending" | "approved" | "rejected" | "auto_approved";
-  approvalDeadlineAt: Date | null;
 }
 
 /**
@@ -34,8 +32,9 @@ interface RecurrenceBaseEvent {
  * Generates up to recurrence_until or MAX_RECURRENCE_WEEKS (52 weeks).
  *
  * Each generated instance inherits the base event's fields but with
- * shifted start_at/end_at. Approval status is inherited from the base
- * event (if approval was required, each instance is also pending).
+ * shifted start_at/end_at. Instances are created with approvalStatus "none"
+ * — approval is only relevant for the parent event. Future series editing
+ * or per-instance approval can be layered on later.
  */
 export async function generateRecurrenceInstances(
   baseEvent: RecurrenceBaseEvent
@@ -79,8 +78,8 @@ export async function generateRecurrenceInstances(
     recurrenceType: baseEvent.recurrenceType,
     recurrenceUntil: baseEvent.recurrenceUntil,
     recurrenceParentEventId: baseEvent.id,
-    approvalStatus: baseEvent.approvalStatus,
-    approvalDeadlineAt: baseEvent.approvalDeadlineAt,
+    approvalStatus: "none",
+    approvalDeadlineAt: null,
   }));
 
   // Batch create all instances

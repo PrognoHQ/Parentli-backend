@@ -17,6 +17,8 @@ describe("Parent capabilities", () => {
     "custody:read",
     "custody:write",
     "family_circle:manage",
+    "events:read",
+    "events:write",
   ];
 
   for (const role of ["owner", "coparent"] as const) {
@@ -76,6 +78,13 @@ describe("Family Circle capabilities", () => {
   it("no family circle role can manage family circle", () => {
     for (const role of ["viewer", "contributor", "carer"]) {
       expect(hasFamilyCircleCapability(role, "family_circle:manage")).toBe(false);
+    }
+  });
+
+  it("no family circle role can access events", () => {
+    for (const role of ["viewer", "contributor", "carer"]) {
+      expect(hasFamilyCircleCapability(role, "events:read")).toBe(false);
+      expect(hasFamilyCircleCapability(role, "events:write")).toBe(false);
     }
   });
 });
