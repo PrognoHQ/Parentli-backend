@@ -34,6 +34,9 @@ const EXPENSE_INCLUDE = {
   rejectedByProfile: {
     select: { id: true, firstName: true, lastName: true },
   },
+  settledByProfile: {
+    select: { id: true, firstName: true, lastName: true },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -50,6 +53,11 @@ interface DerivedFields {
   isHeld: boolean;
   reimbursementStatus: string;
   reimbursedAmt: string;
+  reimbursementSource: string | null;
+  reimbursedAmtExpected: string | null;
+  settlementMethod: string | null;
+  settlementDate: string | null;
+  settlementNote: string | null;
 }
 
 function computeDerived(
@@ -80,6 +88,13 @@ function computeDerived(
     isHeld: perspective.isHeld,
     reimbursementStatus: expense.reimbursementStatus,
     reimbursedAmt: expense.reimbursedAmt.toFixed(2),
+    reimbursementSource: expense.reimbursementSource,
+    reimbursedAmtExpected: expense.reimbursedAmtExpected?.toFixed(2) ?? null,
+    settlementMethod: expense.settlementMethod,
+    settlementDate: expense.settlementDate
+      ? expense.settlementDate.toISOString().slice(0, 10)
+      : null,
+    settlementNote: expense.settlementNote,
   };
 }
 

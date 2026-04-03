@@ -7,6 +7,9 @@ import {
   updateExpenseSchema,
   listExpensesQuerySchema,
   rejectExpenseSchema,
+  updateReimbursementSchema,
+  settleExpenseSchema,
+  updateSettlementSchema,
 } from "./validators";
 import { MemberRole } from "./calculations";
 import * as workflow from "./workflow";
@@ -224,6 +227,111 @@ export async function approvalInbox(
 
     const items = await getApprovalInbox(req.householdId, req.userId);
     res.json({ data: items, total: items.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reimbursement Update
+// ---------------------------------------------------------------------------
+
+export async function updateReimbursement(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req); // enforce parent-only
+
+    const parsed = updateReimbursementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const expense = await workflow.updateReimbursement(
+      req.params.id as string,
+      req.householdId,
+      req.userId,
+      parsed.data
+    );
+    res.json(expense);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settle
+// ---------------------------------------------------------------------------
+
+export async function settle(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req); // enforce parent-only
+
+    const parsed = settleExpenseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const expense = await workflow.settleExpense(
+      req.params.id as string,
+      req.householdId,
+      req.userId,
+      parsed.data
+    );
+    res.json(expense);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update Settlement
+// ---------------------------------------------------------------------------
+
+export async function updateSettlement(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req); // enforce parent-only
+
+    const parsed = updateSettlementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const expense = await workflow.updateSettlement(
+      req.params.id as string,
+      req.householdId,
+      req.userId,
+      parsed.data
+    );
+    res.json(expense);
   } catch (err) {
     next(err);
   }

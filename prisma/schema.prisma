@@ -150,6 +150,15 @@ enum ReimbursementStatus {
   fully_received
 }
 
+enum ExpenseSettlementMethod {
+  venmo
+  zelle
+  bank_transfer
+  paypal
+  cash
+  other
+}
+
 enum ExpenseSplitType {
   default
   category
@@ -175,6 +184,10 @@ enum ExpenseTimelineEntryType {
   rejected
   updated
   approval_requirement_removed
+  reimbursement_status_updated
+  reimbursement_amount_updated
+  settled
+  settlement_updated
 }
 
 enum ExpenseTimelineColor {
@@ -228,6 +241,7 @@ model Profile {
   createdExpenses            Expense[]               @relation("ExpenseCreator")
   approvedExpenses           Expense[]               @relation("ExpenseApprover")
   rejectedExpenses           Expense[]               @relation("ExpenseRejecter")
+  settledExpenses            Expense[]               @relation("ExpenseSettler")
   expenseTimelineEntries     ExpenseTimelineEntry[]   @relation("ExpenseTimelineActor")
 
   @@map("profiles")
@@ -753,6 +767,13 @@ model Expense {
   reimbursable       Boolean            @default(false)
   reimbursedAmt      Decimal            @default(0) @map("reimbursed_amt") @db.Decimal(10, 2)
   reimbursementStatus ReimbursementStatus @default(none) @map("reimbursement_status")
+  reimbursementSource String?            @map("reimbursement_source")
+  reimbursedAmtExpected Decimal?         @map("reimbursed_amt_expected") @db.Decimal(10, 2)
+  settlementMethod   ExpenseSettlementMethod? @map("settlement_method")
+  settlementDate     DateTime?          @map("settlement_date") @db.Date
+  settlementNote     String?            @map("settlement_note")
+  settledByProfileId String?            @map("settled_by_profile_id") @db.Uuid
+  settledAt          DateTime?          @map("settled_at")
   notes              String?
   deletedAt          DateTime?          @map("deleted_at")
   createdAt          DateTime           @default(now()) @map("created_at")
@@ -762,6 +783,7 @@ model Expense {
   createdByProfile  Profile   @relation("ExpenseCreator", fields: [createdByProfileId], references: [id])
   approvedByProfile Profile?  @relation("ExpenseApprover", fields: [approvedByProfileId], references: [id])
   rejectedByProfile Profile?  @relation("ExpenseRejecter", fields: [rejectedByProfileId], references: [id])
+  settledByProfile  Profile?  @relation("ExpenseSettler", fields: [settledByProfileId], references: [id])
   primaryChild      Child?    @relation("ExpensePrimaryChild", fields: [primaryChildId], references: [id])
   category          Category  @relation(fields: [categoryId], references: [id])
   timelineEntries   ExpenseTimelineEntry[]

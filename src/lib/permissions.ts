@@ -26,6 +26,8 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "expenses:read",
     "expenses:write",
     "expenses:approve",
+    "expenses:settle",
+    "expenses:reimburse",
   ],
   coparent: [
     "children:read",
@@ -44,6 +46,8 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "expenses:read",
     "expenses:write",
     "expenses:approve",
+    "expenses:settle",
+    "expenses:reimburse",
   ],
 };
 

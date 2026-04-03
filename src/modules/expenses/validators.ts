@@ -226,6 +226,117 @@ export const rejectExpenseSchema = z
 
 export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
 
+// ---------------------------------------------------------------------------
+// Reimbursement Update Schema
+// ---------------------------------------------------------------------------
+
+const settlementMethodEnum = z.enum([
+  "venmo",
+  "zelle",
+  "bank_transfer",
+  "paypal",
+  "cash",
+  "other",
+]);
+
+export const updateReimbursementSchema = z
+  .object({
+    reimbursementStatus: reimbursementStatusEnum,
+    reimbursedAmt: z.number().min(0),
+    reimbursementSource: z.string().max(500).optional().nullable(),
+    reimbursedAmtExpected: z.number().min(0).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.reimbursementStatus === "none" && data.reimbursedAmt > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "reimbursedAmt must be 0 when reimbursementStatus is none",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    if (
+      (data.reimbursementStatus === "partial" ||
+        data.reimbursementStatus === "fully_received") &&
+      data.reimbursedAmt <= 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "reimbursedAmt must be greater than 0 when reimbursementStatus is partial or fully_received",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    if (
+      data.reimbursedAmtExpected !== undefined &&
+      data.reimbursedAmtExpected !== null &&
+      data.reimbursedAmtExpected < data.reimbursedAmt
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "reimbursedAmtExpected must be >= reimbursedAmt",
+        path: ["reimbursedAmtExpected"],
+      });
+    }
+  });
+
+export type UpdateReimbursementInput = z.infer<typeof updateReimbursementSchema>;
+
+// ---------------------------------------------------------------------------
+// Settle Expense Schema
+// ---------------------------------------------------------------------------
+
+export const settleExpenseSchema = z.object({
+  settlementMethod: settlementMethodEnum,
+  settlementDate: z
+    .string()
+    .min(1, "settlementDate is required")
+    .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v), {
+      message: "settlementDate must be in YYYY-MM-DD format",
+    })
+    .refine((v) => !isNaN(new Date(v).getTime()), {
+      message: "settlementDate must be a valid date",
+    }),
+  settlementNote: z.string().max(2000).optional().nullable(),
+});
+
+export type SettleExpenseInput = z.infer<typeof settleExpenseSchema>;
+
+// ---------------------------------------------------------------------------
+// Update Settlement Schema
+// ---------------------------------------------------------------------------
+
+export const updateSettlementSchema = z
+  .object({
+    settlementMethod: settlementMethodEnum.optional(),
+    settlementDate: z
+      .string()
+      .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v), {
+        message: "settlementDate must be in YYYY-MM-DD format",
+      })
+      .refine((v) => !isNaN(new Date(v).getTime()), {
+        message: "settlementDate must be a valid date",
+      })
+      .optional(),
+    settlementNote: z.string().max(2000).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.settlementMethod === undefined &&
+      data.settlementDate === undefined &&
+      data.settlementNote === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one field must be provided for settlement update",
+        path: [],
+      });
+    }
+  });
+
+export type UpdateSettlementInput = z.infer<typeof updateSettlementSchema>;
+
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;
 export type ListExpensesQuery = z.infer<typeof listExpensesQuerySchema>;
