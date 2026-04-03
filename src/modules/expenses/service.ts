@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, Expense, ReimbursementStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../types";
 import {
@@ -6,6 +6,13 @@ import {
   UpdateExpenseInput,
   ListExpensesQuery,
 } from "./validators";
+import {
+  resolveExpenseSplit,
+  calcShares,
+  mapSharePerspective,
+  MemberRole,
+  PerspectiveShares,
+} from "./calculations";
 
 const EXPENSE_INCLUDE = {
   category: {
@@ -18,6 +25,64 @@ const EXPENSE_INCLUDE = {
     select: { id: true, firstName: true, lastName: true },
   },
 };
+
+// ---------------------------------------------------------------------------
+// Derived Read Model
+// ---------------------------------------------------------------------------
+
+interface DerivedFields {
+  effectiveSplitPct: number;
+  splitType: string;
+  splitReason: string | null;
+  net: string;
+  myShare: string;
+  theirShare: string;
+  isHeld: boolean;
+  reimbursementStatus: string;
+  reimbursedAmt: string;
+}
+
+function computeDerived(
+  expense: Expense,
+  requesterRole: MemberRole
+): DerivedFields {
+  const shares = calcShares(
+    expense.amount,
+    expense.reimbursable,
+    expense.reimbursedAmt,
+    expense.splitPct,
+    expense.reimbursementStatus
+  );
+
+  const perspective = mapSharePerspective(
+    expense.paidBy as MemberRole,
+    requesterRole,
+    shares
+  );
+
+  return {
+    effectiveSplitPct: expense.splitPct,
+    splitType: expense.splitType,
+    splitReason: expense.splitReason,
+    net: perspective.net,
+    myShare: perspective.myShare,
+    theirShare: perspective.theirShare,
+    isHeld: perspective.isHeld,
+    reimbursementStatus: expense.reimbursementStatus,
+    reimbursedAmt: expense.reimbursedAmt.toFixed(2),
+  };
+}
+
+function enrichExpense<T extends Expense>(
+  expense: T,
+  requesterRole: MemberRole
+): T & { derived: DerivedFields } {
+  return { ...expense, derived: computeDerived(expense, requesterRole) };
+}
+
+// ---------------------------------------------------------------------------
+// Create
+// ---------------------------------------------------------------------------
 
 export async function createExpense(
   householdId: string,
@@ -42,6 +107,14 @@ export async function createExpense(
     throw new AppError("Category not found in this household.", 400);
   }
 
+  // Resolve split: custom if caller provided splitPct, otherwise from settings
+  const split = await resolveExpenseSplit(
+    householdId,
+    creatorProfileId,
+    data.categoryId,
+    data.splitPct // undefined = resolve from settings
+  );
+
   const expense = await prisma.expense.create({
     data: {
       householdId,
@@ -54,7 +127,12 @@ export async function createExpense(
       primaryChildId: data.primaryChildId ?? null,
       categoryId: data.categoryId,
       status: data.status ?? "draft",
-      splitPct: data.splitPct ?? 50,
+      splitPct: split.splitPct,
+      splitType: split.splitType,
+      splitReason: split.splitReason,
+      reimbursable: data.reimbursable ?? false,
+      reimbursedAmt: new Prisma.Decimal(data.reimbursedAmt ?? 0),
+      reimbursementStatus: data.reimbursementStatus ?? "none",
       notes: data.notes ?? null,
     },
     include: EXPENSE_INCLUDE,
@@ -63,9 +141,14 @@ export async function createExpense(
   return expense;
 }
 
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+
 export async function listExpenses(
   householdId: string,
-  query: ListExpensesQuery
+  query: ListExpensesQuery,
+  requesterRole?: MemberRole
 ) {
   const where: Prisma.ExpenseWhereInput = {
     householdId,
@@ -105,20 +188,46 @@ export async function listExpenses(
     prisma.expense.count({ where }),
   ]);
 
+  if (query.includeDerived && requesterRole) {
+    const enriched = data.map((e) => enrichExpense(e, requesterRole));
+    return { data: enriched, total, page, limit };
+  }
+
   return { data, total, page, limit };
 }
 
-export async function getExpense(id: string, householdId: string) {
+// ---------------------------------------------------------------------------
+// Detail
+// ---------------------------------------------------------------------------
+
+export async function getExpense(
+  id: string,
+  householdId: string,
+  requesterRole?: MemberRole
+) {
   const expense = await prisma.expense.findFirst({
     where: { id, householdId, deletedAt: null },
     include: EXPENSE_INCLUDE,
   });
+
+  if (!expense) return null;
+
+  // Always include derived data on detail view
+  if (requesterRole) {
+    return enrichExpense(expense, requesterRole);
+  }
+
   return expense;
 }
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
 
 export async function updateExpense(
   id: string,
   householdId: string,
+  creatorProfileId: string,
   data: UpdateExpenseInput
 ) {
   const expense = await prisma.expense.findFirst({
@@ -153,6 +262,7 @@ export async function updateExpense(
   }
 
   // Re-validate category ownership if changing
+  const effectiveCategoryId = data.categoryId ?? expense.categoryId;
   if (data.categoryId && data.categoryId !== expense.categoryId) {
     const category = await prisma.category.findFirst({
       where: { id: data.categoryId, householdId },
@@ -160,6 +270,42 @@ export async function updateExpense(
     if (!category) {
       throw new AppError("Category not found in this household.", 400);
     }
+  }
+
+  // Cross-field: reimbursedAmt cannot exceed (new or existing) amount
+  const effectiveAmount = data.amount !== undefined
+    ? data.amount
+    : Number(expense.amount);
+  const effectiveReimbursedAmt = data.reimbursedAmt !== undefined
+    ? data.reimbursedAmt
+    : Number(expense.reimbursedAmt);
+
+  if (effectiveReimbursedAmt > effectiveAmount) {
+    throw new AppError("reimbursedAmt cannot exceed amount.", 400);
+  }
+
+  // Re-resolve split if category changed or splitPct explicitly provided
+  const needsSplitResolve =
+    data.splitPct !== undefined || data.categoryId !== undefined;
+
+  let splitUpdate: {
+    splitPct?: number;
+    splitType?: string;
+    splitReason?: string | null;
+  } = {};
+
+  if (needsSplitResolve) {
+    const resolved = await resolveExpenseSplit(
+      householdId,
+      creatorProfileId,
+      effectiveCategoryId,
+      data.splitPct // undefined if only category changed → re-resolve from settings
+    );
+    splitUpdate = {
+      splitPct: resolved.splitPct,
+      splitType: resolved.splitType,
+      splitReason: resolved.splitReason,
+    };
   }
 
   const updateData: Prisma.ExpenseUpdateInput = {};
@@ -177,8 +323,17 @@ export async function updateExpense(
   if (data.categoryId !== undefined)
     updateData.category = { connect: { id: data.categoryId } };
   if (data.status !== undefined) updateData.status = data.status;
-  if (data.splitPct !== undefined) updateData.splitPct = data.splitPct;
   if (data.notes !== undefined) updateData.notes = data.notes;
+  if (data.reimbursable !== undefined) updateData.reimbursable = data.reimbursable;
+  if (data.reimbursedAmt !== undefined)
+    updateData.reimbursedAmt = new Prisma.Decimal(data.reimbursedAmt);
+  if (data.reimbursementStatus !== undefined)
+    updateData.reimbursementStatus = data.reimbursementStatus;
+
+  // Apply split resolution
+  if (splitUpdate.splitPct !== undefined) updateData.splitPct = splitUpdate.splitPct;
+  if (splitUpdate.splitType !== undefined) updateData.splitType = splitUpdate.splitType as any;
+  if (splitUpdate.splitReason !== undefined) updateData.splitReason = splitUpdate.splitReason;
 
   const updated = await prisma.expense.update({
     where: { id },
@@ -188,6 +343,10 @@ export async function updateExpense(
 
   return updated;
 }
+
+// ---------------------------------------------------------------------------
+// Delete (soft)
+// ---------------------------------------------------------------------------
 
 export async function deleteExpense(id: string, householdId: string) {
   const expense = await prisma.expense.findFirst({

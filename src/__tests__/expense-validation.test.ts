@@ -54,12 +54,12 @@ describe("createExpenseSchema", () => {
     }
   });
 
-  it("defaults splitPct to 50", () => {
+  it("splitPct is optional (undefined means resolve from settings)", () => {
     const { splitPct, ...noSplit } = validInput;
     const result = createExpenseSchema.safeParse(noSplit);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.splitPct).toBe(50);
+      expect(result.data.splitPct).toBeUndefined();
     }
   });
 

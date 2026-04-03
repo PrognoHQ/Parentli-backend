@@ -1,11 +1,21 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, AppError } from "../../types";
 import * as expenseService from "./service";
+import { getBalanceSummary } from "./queries";
 import {
   createExpenseSchema,
   updateExpenseSchema,
   listExpensesQuerySchema,
 } from "./validators";
+import { MemberRole } from "./calculations";
+
+function getRequesterRole(req: AuthenticatedRequest): MemberRole {
+  const role = req.membershipRole;
+  if (role !== "owner" && role !== "coparent") {
+    throw new AppError("Invalid membership role for expense operations.", 403);
+  }
+  return role;
+}
 
 export async function create(
   req: AuthenticatedRequest,
@@ -52,9 +62,11 @@ export async function list(
       );
     }
 
+    const role = getRequesterRole(req);
     const result = await expenseService.listExpenses(
       req.householdId,
-      parsed.data
+      parsed.data,
+      role
     );
     res.json(result);
   } catch (err) {
@@ -71,9 +83,11 @@ export async function getDetail(
     if (!req.householdId)
       throw new AppError("No household.", 403);
 
+    const role = getRequesterRole(req);
     const expense = await expenseService.getExpense(
       req.params.id as string,
-      req.householdId
+      req.householdId,
+      role
     );
     if (!expense) throw new AppError("Expense not found.", 404);
     res.json(expense);
@@ -102,6 +116,7 @@ export async function update(
     const expense = await expenseService.updateExpense(
       req.params.id as string,
       req.householdId,
+      req.userId,
       parsed.data
     );
     res.json(expense);
@@ -122,6 +137,23 @@ export async function remove(
       req.householdId
     );
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function balanceSummary(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.householdId)
+      throw new AppError("No household.", 403);
+
+    const role = getRequesterRole(req);
+    const summary = await getBalanceSummary(req.householdId, role);
+    res.json(summary);
   } catch (err) {
     next(err);
   }
