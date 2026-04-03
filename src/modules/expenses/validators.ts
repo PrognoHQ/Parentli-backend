@@ -20,6 +20,7 @@ export const createExpenseSchema = z
     // splitPct is intentionally optional with NO default.
     // undefined = resolve from household settings; provided = custom split.
     splitPct: z.number().int().min(0).max(100).optional(),
+    backdateReason: z.string().max(1000).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
     reimbursable: z.boolean().optional().default(false),
     reimbursedAmt: z.number().min(0).optional().default(0),
@@ -98,6 +99,7 @@ export const updateExpenseSchema = z
     status: z.enum(["draft", "awaiting"]).optional(),
     // When provided, treated as custom split override
     splitPct: z.number().int().min(0).max(100).optional(),
+    backdateReason: z.string().max(1000).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
     reimbursable: z.boolean().optional(),
     reimbursedAmt: z.number().min(0).optional(),
