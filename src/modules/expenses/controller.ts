@@ -1,13 +1,15 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, AppError } from "../../types";
 import * as expenseService from "./service";
-import { getBalanceSummary } from "./queries";
+import { getBalanceSummary, getApprovalInbox } from "./queries";
 import {
   createExpenseSchema,
   updateExpenseSchema,
   listExpensesQuerySchema,
+  rejectExpenseSchema,
 } from "./validators";
 import { MemberRole } from "./calculations";
+import * as workflow from "./workflow";
 
 function getRequesterRole(req: AuthenticatedRequest): MemberRole {
   const role = req.membershipRole;
@@ -154,6 +156,74 @@ export async function balanceSummary(
     const role = getRequesterRole(req);
     const summary = await getBalanceSummary(req.householdId, role);
     res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function approve(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    const expense = await workflow.approveExpense(
+      req.params.id as string,
+      req.householdId,
+      req.userId
+    );
+    res.json(expense);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reject(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    const parsed = rejectExpenseSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const expense = await workflow.rejectExpense(
+      req.params.id as string,
+      req.householdId,
+      req.userId,
+      parsed.data.reason,
+      parsed.data.detail
+    );
+    res.json(expense);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function approvalInbox(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req); // enforce parent-only access
+
+    const items = await getApprovalInbox(req.householdId, req.userId);
+    res.json({ data: items, total: items.length });
   } catch (err) {
     next(err);
   }
