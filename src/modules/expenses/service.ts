@@ -12,6 +12,9 @@ import {
   mapSharePerspective,
   MemberRole,
   PerspectiveShares,
+  getExpensePolicySettings,
+  determineBackdateCategory,
+  determineExpenseApprovalRequirement,
 } from "./calculations";
 
 const EXPENSE_INCLUDE = {
@@ -115,6 +118,37 @@ export async function createExpense(
     data.splitPct // undefined = resolve from settings
   );
 
+  // Backdate categorization + approval determination
+  const policy = await getExpensePolicySettings(householdId, creatorProfileId);
+
+  const backdateResult = determineBackdateCategory(
+    data.date,
+    new Date(),
+    policy.backdateFlagDays,
+    policy.backdateApprovalDays,
+    policy.maxBackdateDays
+  );
+
+  // Require backdateReason for backdated or significant expenses
+  if (backdateResult.category !== "recent" && !data.backdateReason) {
+    throw new AppError(
+      "backdateReason is required for backdated or significantly backdated expenses.",
+      400
+    );
+  }
+
+  const approvalResult = determineExpenseApprovalRequirement({
+    amount: data.amount,
+    backdateCategory: backdateResult.category,
+    approvalRequired: policy.approvalRequired,
+    approvalThreshold: policy.approvalThreshold,
+  });
+
+  // If approval is required, force status to "awaiting"
+  const effectiveStatus = approvalResult.approvalRequired
+    ? "awaiting"
+    : (data.status ?? "draft");
+
   const expense = await prisma.expense.create({
     data: {
       householdId,
@@ -126,10 +160,14 @@ export async function createExpense(
       childScope: data.childScope,
       primaryChildId: data.primaryChildId ?? null,
       categoryId: data.categoryId,
-      status: data.status ?? "draft",
+      status: effectiveStatus,
       splitPct: split.splitPct,
       splitType: split.splitType,
       splitReason: split.splitReason,
+      backdateCategory: backdateResult.category,
+      backdateReason: data.backdateReason ?? null,
+      approvalRequired: approvalResult.approvalRequired,
+      approvalTrigger: approvalResult.approvalTrigger,
       reimbursable: data.reimbursable ?? false,
       reimbursedAmt: new Prisma.Decimal(data.reimbursedAmt ?? 0),
       reimbursementStatus: data.reimbursementStatus ?? "none",
@@ -308,6 +346,61 @@ export async function updateExpense(
     };
   }
 
+  // Re-evaluate backdate/approval flags when relevant fields change
+  const needsBackdateReeval =
+    data.date !== undefined ||
+    data.amount !== undefined ||
+    data.backdateReason !== undefined;
+
+  let backdateUpdate: Prisma.ExpenseUpdateInput = {};
+
+  if (needsBackdateReeval) {
+    const policy = await getExpensePolicySettings(householdId, creatorProfileId);
+
+    // Compute effective values for re-evaluation
+    const effectiveDate = data.date ?? expense.date.toISOString().slice(0, 10);
+    const effectiveAmt = data.amount ?? Number(expense.amount);
+    const effectiveBackdateReason =
+      data.backdateReason !== undefined
+        ? data.backdateReason
+        : expense.backdateReason;
+
+    const backdateResult = determineBackdateCategory(
+      effectiveDate,
+      new Date(),
+      policy.backdateFlagDays,
+      policy.backdateApprovalDays,
+      policy.maxBackdateDays
+    );
+
+    // Require backdateReason for backdated or significant expenses
+    if (backdateResult.category !== "recent" && !effectiveBackdateReason) {
+      throw new AppError(
+        "backdateReason is required for backdated or significantly backdated expenses.",
+        400
+      );
+    }
+
+    const approvalResult = determineExpenseApprovalRequirement({
+      amount: effectiveAmt,
+      backdateCategory: backdateResult.category,
+      approvalRequired: policy.approvalRequired,
+      approvalThreshold: policy.approvalThreshold,
+    });
+
+    backdateUpdate = {
+      backdateCategory: backdateResult.category,
+      backdateReason: effectiveBackdateReason,
+      approvalRequired: approvalResult.approvalRequired,
+      approvalTrigger: approvalResult.approvalTrigger,
+    };
+
+    // Auto-promote draft to awaiting if approval is now required
+    if (approvalResult.approvalRequired && expense.status === "draft") {
+      backdateUpdate.status = "awaiting";
+    }
+  }
+
   const updateData: Prisma.ExpenseUpdateInput = {};
   if (data.description !== undefined) updateData.description = data.description;
   if (data.amount !== undefined)
@@ -323,6 +416,7 @@ export async function updateExpense(
   if (data.categoryId !== undefined)
     updateData.category = { connect: { id: data.categoryId } };
   if (data.status !== undefined) updateData.status = data.status;
+  if (data.backdateReason !== undefined) updateData.backdateReason = data.backdateReason;
   if (data.notes !== undefined) updateData.notes = data.notes;
   if (data.reimbursable !== undefined) updateData.reimbursable = data.reimbursable;
   if (data.reimbursedAmt !== undefined)
@@ -334,6 +428,9 @@ export async function updateExpense(
   if (splitUpdate.splitPct !== undefined) updateData.splitPct = splitUpdate.splitPct;
   if (splitUpdate.splitType !== undefined) updateData.splitType = splitUpdate.splitType as any;
   if (splitUpdate.splitReason !== undefined) updateData.splitReason = splitUpdate.splitReason;
+
+  // Apply backdate/approval re-evaluation
+  Object.assign(updateData, backdateUpdate);
 
   const updated = await prisma.expense.update({
     where: { id },

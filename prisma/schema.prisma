@@ -156,6 +156,18 @@ enum ExpenseSplitType {
   custom
 }
 
+enum ExpenseBackdateCategory {
+  recent
+  backdated
+  significant
+}
+
+enum ExpenseApprovalTrigger {
+  none
+  threshold
+  significant_backdate
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -709,6 +721,10 @@ model Expense {
   splitPct           Int                @default(50) @map("split_pct") @db.SmallInt
   splitType          ExpenseSplitType   @default(default) @map("split_type")
   splitReason        String?            @map("split_reason")
+  backdateCategory   ExpenseBackdateCategory @default(recent) @map("backdate_category")
+  backdateReason     String?            @map("backdate_reason")
+  approvalRequired   Boolean            @default(false) @map("approval_required")
+  approvalTrigger    ExpenseApprovalTrigger @default(none) @map("approval_trigger")
   reimbursable       Boolean            @default(false)
   reimbursedAmt      Decimal            @default(0) @map("reimbursed_amt") @db.Decimal(10, 2)
   reimbursementStatus ReimbursementStatus @default(none) @map("reimbursement_status")

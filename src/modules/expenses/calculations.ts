@@ -1,10 +1,58 @@
 import { Prisma, ReimbursementStatus, ExpenseSplitType } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { AppError } from "../../types";
 import { DEFAULT_SETTINGS, UserSettings, CategorySplit } from "../../types/settings";
 
 const Decimal = Prisma.Decimal;
 const ZERO = new Decimal(0);
 const HUNDRED = new Decimal(100);
+
+// ---------------------------------------------------------------------------
+// Shared Settings Fetch
+// ---------------------------------------------------------------------------
+
+async function fetchMergedSettings(
+  householdId: string,
+  profileId: string
+): Promise<UserSettings> {
+  const settingsRecord = await prisma.userSettings.findUnique({
+    where: {
+      householdId_profileId: { householdId, profileId },
+    },
+  });
+
+  return settingsRecord &&
+    typeof settingsRecord.settings === "object" &&
+    settingsRecord.settings !== null
+    ? ({ ...DEFAULT_SETTINGS, ...(settingsRecord.settings as Record<string, unknown>) } as UserSettings)
+    : DEFAULT_SETTINGS;
+}
+
+// ---------------------------------------------------------------------------
+// Expense Policy Settings
+// ---------------------------------------------------------------------------
+
+export interface ExpensePolicySettings {
+  approvalRequired: boolean;
+  approvalThreshold: number;
+  backdateFlagDays: number;
+  backdateApprovalDays: number;
+  maxBackdateDays: number;
+}
+
+export async function getExpensePolicySettings(
+  householdId: string,
+  profileId: string
+): Promise<ExpensePolicySettings> {
+  const settings = await fetchMergedSettings(householdId, profileId);
+  return {
+    approvalRequired: settings.approvalRequired,
+    approvalThreshold: settings.approvalThreshold,
+    backdateFlagDays: settings.backdateFlagDays,
+    backdateApprovalDays: settings.backdateApprovalDays,
+    maxBackdateDays: settings.maxBackdateDays,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Split Resolution Engine
@@ -39,17 +87,7 @@ export async function resolveExpenseSplit(
     };
   }
 
-  // Fetch creator's household settings
-  const settingsRecord = await prisma.userSettings.findUnique({
-    where: {
-      householdId_profileId: { householdId, profileId: creatorProfileId },
-    },
-  });
-
-  const settings: UserSettings =
-    settingsRecord && typeof settingsRecord.settings === "object" && settingsRecord.settings !== null
-      ? { ...DEFAULT_SETTINGS, ...(settingsRecord.settings as Record<string, unknown>) } as UserSettings
-      : DEFAULT_SETTINGS;
+  const settings = await fetchMergedSettings(householdId, creatorProfileId);
 
   // Priority 2: category-specific split override
   const categorySplits: Record<string, CategorySplit> = settings.categorySplits ?? {};
@@ -185,5 +223,110 @@ export function mapSharePerspective(
       ? calc.otherShare.toFixed(2)
       : calc.payerShare.toFixed(2),
     isHeld: calc.isHeld,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Backdate Categorization Engine
+// ---------------------------------------------------------------------------
+
+export type BackdateCategory = "recent" | "backdated" | "significant";
+
+export interface BackdateCategoryResult {
+  category: BackdateCategory;
+  ageDays: number;
+}
+
+/**
+ * Determines the backdate category of an expense based on its age in calendar days.
+ *
+ * Uses UTC-midnight dates to avoid timezone/DST issues.
+ * Throws AppError if the expense date is in the future or exceeds maxBackdateDays.
+ */
+export function determineBackdateCategory(
+  expenseDate: string, // YYYY-MM-DD
+  now: Date,
+  flagDays: number,
+  approvalDays: number,
+  maxBackdateDays: number
+): BackdateCategoryResult {
+  // Parse expense date as UTC midnight
+  const [year, month, day] = expenseDate.split("-").map(Number);
+  const expenseMidnight = Date.UTC(year, month - 1, day);
+
+  // Derive now as UTC midnight
+  const nowMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate()
+  );
+
+  const ageDays = Math.floor((nowMidnight - expenseMidnight) / 86_400_000);
+
+  if (ageDays < 0) {
+    throw new AppError("Expense date cannot be in the future.", 400);
+  }
+
+  if (ageDays > maxBackdateDays) {
+    throw new AppError(
+      `Expense date exceeds maximum backdate limit of ${maxBackdateDays} days.`,
+      400
+    );
+  }
+
+  let category: BackdateCategory;
+  if (ageDays <= flagDays) {
+    category = "recent";
+  } else if (ageDays < approvalDays) {
+    category = "backdated";
+  } else {
+    category = "significant";
+  }
+
+  return { category, ageDays };
+}
+
+// ---------------------------------------------------------------------------
+// Approval Requirement Engine
+// ---------------------------------------------------------------------------
+
+export type ApprovalTrigger = "threshold" | "significant_backdate" | "none";
+
+export interface ApprovalRequirementResult {
+  approvalRequired: boolean;
+  approvalTrigger: ApprovalTrigger;
+}
+
+/**
+ * Determines whether an expense requires approval.
+ *
+ * Priority:
+ *   1. Significant backdate always requires approval
+ *   2. Threshold-based approval when enabled and amount >= threshold
+ *   3. Otherwise no approval required
+ */
+export function determineExpenseApprovalRequirement(params: {
+  amount: number;
+  backdateCategory: BackdateCategory;
+  approvalRequired: boolean;
+  approvalThreshold: number;
+}): ApprovalRequirementResult {
+  if (params.backdateCategory === "significant") {
+    return {
+      approvalRequired: true,
+      approvalTrigger: "significant_backdate",
+    };
+  }
+
+  if (params.approvalRequired && params.amount >= params.approvalThreshold) {
+    return {
+      approvalRequired: true,
+      approvalTrigger: "threshold",
+    };
+  }
+
+  return {
+    approvalRequired: false,
+    approvalTrigger: "none",
   };
 }
