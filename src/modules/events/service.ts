@@ -90,6 +90,14 @@ export async function createEvent(
     );
   } else {
     // Just add "created" timeline entry and notification
+    // When notify-always rule is active, target the co-parent explicitly
+    const notificationTarget = approvalReq.notify
+      ? (await prisma.householdMember.findFirst({
+          where: { householdId, profileId: { not: creatorProfileId }, status: "active" },
+          select: { profileId: true },
+        }))?.profileId ?? null
+      : null;
+
     await prisma.$transaction([
       prisma.eventTimelineEntry.create({
         data: {
@@ -106,7 +114,8 @@ export async function createEvent(
           householdId,
           eventId: event.id,
           type: "event_created",
-          payload: { creatorName },
+          targetProfileId: notificationTarget,
+          payload: { creatorName, notifyCoparent: approvalReq.notify },
         },
       }),
     ]);
@@ -132,8 +141,6 @@ export async function createEvent(
       notify: data.notify,
       recurrenceType: data.recurrenceType,
       recurrenceUntil: data.recurrenceUntil ? new Date(data.recurrenceUntil) : null,
-      approvalStatus: approvalReq.required ? "pending" : "none",
-      approvalDeadlineAt: approvalReq.deadlineAt,
     });
   }
 
@@ -178,16 +185,39 @@ export async function updateEvent(
     select: { firstName: true },
   });
 
+  // Re-evaluate approval if category or healthSubType changed on a non-pending event
+  const categoryChanged = data.category && data.category !== event.category;
+  const healthSubTypeChanged = data.healthSubType !== undefined && data.healthSubType !== event.healthSubType;
+  const needsApprovalReeval = (categoryChanged || healthSubTypeChanged) && event.approvalStatus === "none";
+
+  let newApprovalData: Record<string, unknown> = {};
+  if (needsApprovalReeval) {
+    const approvalReq = await determineEventApprovalRequirement(
+      effectiveCategory,
+      data.healthSubType !== undefined ? (data.healthSubType ?? null) : (event.healthSubType ?? null),
+      householdId,
+      event.createdByProfileId
+    );
+
+    if (approvalReq.required) {
+      newApprovalData = {
+        approvalStatus: "pending",
+        approvalDeadlineAt: approvalReq.deadlineAt,
+      };
+    }
+  }
+
   const updated = await prisma.event.update({
     where: { id: eventId },
     data: {
       ...buildUpdateData(data),
+      ...newApprovalData,
       updatedByProfileId: updaterProfileId,
     },
   });
 
   // Add timeline entry for the update
-  await prisma.$transaction([
+  const transactionOps = [
     prisma.eventTimelineEntry.create({
       data: {
         householdId,
@@ -206,7 +236,28 @@ export async function updateEvent(
         payload: { updaterName: updater?.firstName },
       },
     }),
-  ]);
+  ];
+
+  await prisma.$transaction(transactionOps);
+
+  // If approval is now required due to category change, create the approval request
+  if (needsApprovalReeval && newApprovalData.approvalStatus === "pending") {
+    const approvalReq = await determineEventApprovalRequirement(
+      effectiveCategory,
+      data.healthSubType !== undefined ? (data.healthSubType ?? null) : (event.healthSubType ?? null),
+      householdId,
+      event.createdByProfileId
+    );
+
+    await createApprovalRequest(
+      eventId,
+      householdId,
+      event.createdByProfileId,
+      approvalReq.requestedToProfileId,
+      approvalReq.deadlineAt!,
+      updater?.firstName ?? "Unknown"
+    );
+  }
 
   return updated;
 }

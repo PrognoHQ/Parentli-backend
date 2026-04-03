@@ -225,7 +225,7 @@ export async function processExpired(
 ): Promise<void> {
   try {
     const result = await eventApprovals.processExpiredEventApprovals();
-    res.json(result);
+    res.json({ processed: result.processed });
   } catch (err) {
     next(err);
   }
