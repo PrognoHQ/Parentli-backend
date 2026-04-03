@@ -16,7 +16,7 @@ import {
   determineBackdateCategory,
   determineExpenseApprovalRequirement,
 } from "./calculations";
-import { createSubmittedForApprovalEntry } from "./workflow";
+
 
 const EXPENSE_INCLUDE = {
   category: {
@@ -156,46 +156,60 @@ export async function createExpense(
     ? "awaiting"
     : (data.status ?? "draft");
 
-  const expense = await prisma.expense.create({
-    data: {
-      householdId,
-      createdByProfileId: creatorProfileId,
-      description: data.description,
-      amount: new Prisma.Decimal(data.amount),
-      paidBy: data.paidBy,
-      date: new Date(data.date),
-      childScope: data.childScope,
-      primaryChildId: data.primaryChildId ?? null,
-      categoryId: data.categoryId,
-      status: effectiveStatus,
-      splitPct: split.splitPct,
-      splitType: split.splitType,
-      splitReason: split.splitReason,
-      backdateCategory: backdateResult.category,
-      backdateReason: data.backdateReason ?? null,
-      approvalRequired: approvalResult.approvalRequired,
-      approvalTrigger: approvalResult.approvalTrigger,
-      reimbursable: data.reimbursable ?? false,
-      reimbursedAmt: new Prisma.Decimal(data.reimbursedAmt ?? 0),
-      reimbursementStatus: data.reimbursementStatus ?? "none",
-      notes: data.notes ?? null,
-    },
-    include: EXPENSE_INCLUDE,
-  });
-
-  // Create timeline entry when approval is required
+  // Fetch creator name upfront if approval is required (for timeline entry)
+  let creatorName = "User";
   if (approvalResult.approvalRequired) {
     const creator = await prisma.profile.findUnique({
       where: { id: creatorProfileId },
       select: { firstName: true },
     });
-    await createSubmittedForApprovalEntry(
-      expense.id,
-      householdId,
-      creatorProfileId,
-      creator?.firstName ?? "User"
-    );
+    creatorName = creator?.firstName ?? "User";
   }
+
+  const expense = await prisma.$transaction(async (tx) => {
+    const created = await tx.expense.create({
+      data: {
+        householdId,
+        createdByProfileId: creatorProfileId,
+        description: data.description,
+        amount: new Prisma.Decimal(data.amount),
+        paidBy: data.paidBy,
+        date: new Date(data.date),
+        childScope: data.childScope,
+        primaryChildId: data.primaryChildId ?? null,
+        categoryId: data.categoryId,
+        status: effectiveStatus,
+        splitPct: split.splitPct,
+        splitType: split.splitType,
+        splitReason: split.splitReason,
+        backdateCategory: backdateResult.category,
+        backdateReason: data.backdateReason ?? null,
+        approvalRequired: approvalResult.approvalRequired,
+        approvalTrigger: approvalResult.approvalTrigger,
+        reimbursable: data.reimbursable ?? false,
+        reimbursedAmt: new Prisma.Decimal(data.reimbursedAmt ?? 0),
+        reimbursementStatus: data.reimbursementStatus ?? "none",
+        notes: data.notes ?? null,
+      },
+      include: EXPENSE_INCLUDE,
+    });
+
+    // Create timeline entry atomically when approval is required
+    if (approvalResult.approvalRequired) {
+      await tx.expenseTimelineEntry.create({
+        data: {
+          householdId,
+          expenseId: created.id,
+          actorProfileId: creatorProfileId,
+          entryType: "submitted_for_approval",
+          label: `Submitted for approval by ${creatorName}`,
+          color: "gold",
+        },
+      });
+    }
+
+    return created;
+  });
 
   return expense;
 }
