@@ -168,6 +168,22 @@ enum ExpenseApprovalTrigger {
   significant_backdate
 }
 
+enum ExpenseTimelineEntryType {
+  created
+  submitted_for_approval
+  approved
+  rejected
+  updated
+  approval_requirement_removed
+}
+
+enum ExpenseTimelineColor {
+  sage
+  gold
+  terracotta
+  muted
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -210,6 +226,9 @@ model Profile {
 
   // Phase 4: Expenses
   createdExpenses            Expense[]               @relation("ExpenseCreator")
+  approvedExpenses           Expense[]               @relation("ExpenseApprover")
+  rejectedExpenses           Expense[]               @relation("ExpenseRejecter")
+  expenseTimelineEntries     ExpenseTimelineEntry[]   @relation("ExpenseTimelineActor")
 
   @@map("profiles")
 }
@@ -251,6 +270,7 @@ model Household {
 
   // Phase 4: Expenses
   expenses                 Expense[]
+  expenseTimelineEntries   ExpenseTimelineEntry[]
 
   @@map("households")
 }
@@ -725,6 +745,11 @@ model Expense {
   backdateReason     String?            @map("backdate_reason")
   approvalRequired   Boolean            @default(false) @map("approval_required")
   approvalTrigger    ExpenseApprovalTrigger @default(none) @map("approval_trigger")
+  approvedAt          DateTime?          @map("approved_at")
+  approvedByProfileId String?            @map("approved_by_profile_id") @db.Uuid
+  rejectedAt          DateTime?          @map("rejected_at")
+  rejectedByProfileId String?            @map("rejected_by_profile_id") @db.Uuid
+  rejectionReason     String?            @map("rejection_reason")
   reimbursable       Boolean            @default(false)
   reimbursedAmt      Decimal            @default(0) @map("reimbursed_amt") @db.Decimal(10, 2)
   reimbursementStatus ReimbursementStatus @default(none) @map("reimbursement_status")
@@ -734,12 +759,35 @@ model Expense {
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
   household        Household @relation(fields: [householdId], references: [id])
-  createdByProfile Profile   @relation("ExpenseCreator", fields: [createdByProfileId], references: [id])
-  primaryChild     Child?    @relation("ExpensePrimaryChild", fields: [primaryChildId], references: [id])
-  category         Category  @relation(fields: [categoryId], references: [id])
+  createdByProfile  Profile   @relation("ExpenseCreator", fields: [createdByProfileId], references: [id])
+  approvedByProfile Profile?  @relation("ExpenseApprover", fields: [approvedByProfileId], references: [id])
+  rejectedByProfile Profile?  @relation("ExpenseRejecter", fields: [rejectedByProfileId], references: [id])
+  primaryChild      Child?    @relation("ExpensePrimaryChild", fields: [primaryChildId], references: [id])
+  category          Category  @relation(fields: [categoryId], references: [id])
+  timelineEntries   ExpenseTimelineEntry[]
 
   @@index([householdId, date])
   @@index([householdId, status])
   @@index([householdId, categoryId])
   @@map("expenses")
+}
+
+// --- Phase 4C2: Expense Timeline Entries ---
+model ExpenseTimelineEntry {
+  id             String                    @id @default(uuid()) @db.Uuid
+  householdId    String                    @map("household_id") @db.Uuid
+  expenseId      String                    @map("expense_id") @db.Uuid
+  actorProfileId String?                   @map("actor_profile_id") @db.Uuid
+  entryType      ExpenseTimelineEntryType  @map("entry_type")
+  label          String
+  detail         String?
+  color          ExpenseTimelineColor
+  createdAt      DateTime                  @default(now()) @map("created_at")
+
+  household    Household @relation(fields: [householdId], references: [id])
+  expense      Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  actorProfile Profile?  @relation("ExpenseTimelineActor", fields: [actorProfileId], references: [id])
+
+  @@index([expenseId])
+  @@map("expense_timeline_entries")
 }

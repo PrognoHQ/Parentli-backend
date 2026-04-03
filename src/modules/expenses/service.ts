@@ -16,6 +16,7 @@ import {
   determineBackdateCategory,
   determineExpenseApprovalRequirement,
 } from "./calculations";
+import { createSubmittedForApprovalEntry } from "./workflow";
 
 const EXPENSE_INCLUDE = {
   category: {
@@ -25,6 +26,12 @@ const EXPENSE_INCLUDE = {
     select: { id: true, firstName: true, lastName: true, emoji: true },
   },
   createdByProfile: {
+    select: { id: true, firstName: true, lastName: true },
+  },
+  approvedByProfile: {
+    select: { id: true, firstName: true, lastName: true },
+  },
+  rejectedByProfile: {
     select: { id: true, firstName: true, lastName: true },
   },
 };
@@ -175,6 +182,20 @@ export async function createExpense(
     },
     include: EXPENSE_INCLUDE,
   });
+
+  // Create timeline entry when approval is required
+  if (approvalResult.approvalRequired) {
+    const creator = await prisma.profile.findUnique({
+      where: { id: creatorProfileId },
+      select: { firstName: true },
+    });
+    await createSubmittedForApprovalEntry(
+      expense.id,
+      householdId,
+      creatorProfileId,
+      creator?.firstName ?? "User"
+    );
+  }
 
   return expense;
 }

@@ -189,6 +189,43 @@ export const listExpensesQuerySchema = z.object({
     .transform((v) => v === "true"),
 });
 
+// ---------------------------------------------------------------------------
+// Approval Action Schemas
+// ---------------------------------------------------------------------------
+
+export const EXPENSE_REJECTION_REASONS = [
+  "not_in_budget",
+  "need_to_discuss",
+  "wrong_amount",
+  "expense_too_old_to_verify",
+  "no_record",
+  "already_settled_informally",
+  "incorrect_amount",
+  "other",
+] as const;
+
+export type ExpenseRejectionReason = (typeof EXPENSE_REJECTION_REASONS)[number];
+
+export const rejectExpenseSchema = z
+  .object({
+    reason: z.enum(EXPENSE_REJECTION_REASONS),
+    detail: z.string().max(1000).optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.reason === "other" &&
+      (!data.detail || data.detail.trim().length === 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'detail is required when reason is "other"',
+        path: ["detail"],
+      });
+    }
+  });
+
+export type RejectExpenseInput = z.infer<typeof rejectExpenseSchema>;
+
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;
 export type ListExpensesQuery = z.infer<typeof listExpensesQuerySchema>;
