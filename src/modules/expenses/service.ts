@@ -399,6 +399,11 @@ export async function updateExpense(
     if (approvalResult.approvalRequired && expense.status === "draft") {
       backdateUpdate.status = "awaiting";
     }
+
+    // Auto-demote awaiting to draft if approval is no longer required
+    if (!approvalResult.approvalRequired && expense.status === "awaiting") {
+      backdateUpdate.status = "draft";
+    }
   }
 
   const updateData: Prisma.ExpenseUpdateInput = {};

@@ -299,3 +299,76 @@ describe("determineExpenseApprovalRequirement", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Status transition logic (mirrors service.ts update re-evaluation)
+// ---------------------------------------------------------------------------
+
+describe("status transition logic on re-evaluation", () => {
+  /**
+   * Simulates the status transition logic from service.ts updateExpense.
+   * Given the current expense status and the new approval result,
+   * returns the effective status.
+   */
+  function resolveStatus(
+    currentStatus: "draft" | "awaiting",
+    approvalRequired: boolean
+  ): "draft" | "awaiting" {
+    if (approvalRequired && currentStatus === "draft") return "awaiting";
+    if (!approvalRequired && currentStatus === "awaiting") return "draft";
+    return currentStatus;
+  }
+
+  it("promotes draft to awaiting when approval becomes required", () => {
+    expect(resolveStatus("draft", true)).toBe("awaiting");
+  });
+
+  it("demotes awaiting to draft when approval is no longer required", () => {
+    expect(resolveStatus("awaiting", false)).toBe("draft");
+  });
+
+  it("keeps draft as draft when no approval required", () => {
+    expect(resolveStatus("draft", false)).toBe("draft");
+  });
+
+  it("keeps awaiting as awaiting when approval still required", () => {
+    expect(resolveStatus("awaiting", true)).toBe("awaiting");
+  });
+
+  it("date moved from significant to recent demotes status", () => {
+    // Simulate: expense was significant (90+ days), now updated to recent (3 days)
+    const newBackdate = determineBackdateCategory(
+      daysAgo(3),
+      NOW,
+      FLAG_DAYS,
+      APPROVAL_DAYS,
+      MAX_BACKDATE_DAYS
+    );
+    expect(newBackdate.category).toBe("recent");
+
+    const newApproval = determineExpenseApprovalRequirement({
+      amount: 30,
+      backdateCategory: newBackdate.category,
+      approvalRequired: false,
+      approvalThreshold: 50,
+    });
+    expect(newApproval.approvalRequired).toBe(false);
+
+    // Status should demote from awaiting to draft
+    expect(resolveStatus("awaiting", newApproval.approvalRequired)).toBe("draft");
+  });
+
+  it("amount reduced below threshold demotes status", () => {
+    // Simulate: expense was above threshold, now reduced below
+    const newApproval = determineExpenseApprovalRequirement({
+      amount: 30,
+      backdateCategory: "recent",
+      approvalRequired: true,
+      approvalThreshold: 50,
+    });
+    expect(newApproval.approvalRequired).toBe(false);
+
+    // Status should demote from awaiting to draft
+    expect(resolveStatus("awaiting", newApproval.approvalRequired)).toBe("draft");
+  });
+});
