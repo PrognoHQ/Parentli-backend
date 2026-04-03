@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+const reimbursementStatusEnum = z.enum([
+  "none",
+  "awaiting_reimb",
+  "partial",
+  "fully_received",
+]);
+
 export const createExpenseSchema = z
   .object({
     description: z.string().min(1, "Description is required").max(500),
@@ -10,8 +17,13 @@ export const createExpenseSchema = z
     primaryChildId: z.string().uuid().optional().nullable(),
     categoryId: z.string().uuid("Category is required"),
     status: z.enum(["draft", "awaiting"]).optional().default("draft"),
-    splitPct: z.number().int().min(0).max(100).optional().default(50),
+    // splitPct is intentionally optional with NO default.
+    // undefined = resolve from household settings; provided = custom split.
+    splitPct: z.number().int().min(0).max(100).optional(),
     notes: z.string().max(2000).optional().nullable(),
+    reimbursable: z.boolean().optional().default(false),
+    reimbursedAmt: z.number().min(0).optional().default(0),
+    reimbursementStatus: reimbursementStatusEnum.optional().default("none"),
   })
   .superRefine((data, ctx) => {
     if (data.childScope === "single" && !data.primaryChildId) {
@@ -40,6 +52,38 @@ export const createExpenseSchema = z
         });
       }
     }
+
+    // Cross-field: reimbursedAmt cannot exceed amount
+    if (data.reimbursedAmt > data.amount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "reimbursedAmt cannot exceed amount",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    // Cross-field: reimbursement status consistency
+    if (data.reimbursementStatus === "none" && data.reimbursedAmt > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "reimbursedAmt must be 0 when reimbursementStatus is none",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    if (
+      (data.reimbursementStatus === "partial" ||
+        data.reimbursementStatus === "fully_received") &&
+      data.reimbursedAmt <= 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "reimbursedAmt must be greater than 0 when reimbursementStatus is partial or fully_received",
+        path: ["reimbursedAmt"],
+      });
+    }
   });
 
 export const updateExpenseSchema = z
@@ -52,8 +96,12 @@ export const updateExpenseSchema = z
     primaryChildId: z.string().uuid().optional().nullable(),
     categoryId: z.string().uuid().optional(),
     status: z.enum(["draft", "awaiting"]).optional(),
+    // When provided, treated as custom split override
     splitPct: z.number().int().min(0).max(100).optional(),
     notes: z.string().max(2000).optional().nullable(),
+    reimbursable: z.boolean().optional(),
+    reimbursedAmt: z.number().min(0).optional(),
+    reimbursementStatus: reimbursementStatusEnum.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.childScope === "single" && data.primaryChildId === undefined) {
@@ -84,6 +132,43 @@ export const updateExpenseSchema = z
         }
       }
     }
+
+    // Cross-field: reimbursedAmt cannot exceed amount (when both present)
+    if (
+      data.reimbursedAmt !== undefined &&
+      data.amount !== undefined &&
+      data.reimbursedAmt > data.amount
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "reimbursedAmt cannot exceed amount",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    // Cross-field: reimbursement status consistency (when both present)
+    if (data.reimbursementStatus === "none" && (data.reimbursedAmt ?? 0) > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "reimbursedAmt must be 0 when reimbursementStatus is none",
+        path: ["reimbursedAmt"],
+      });
+    }
+
+    if (
+      (data.reimbursementStatus === "partial" ||
+        data.reimbursementStatus === "fully_received") &&
+      data.reimbursedAmt !== undefined &&
+      data.reimbursedAmt <= 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "reimbursedAmt must be greater than 0 when reimbursementStatus is partial or fully_received",
+        path: ["reimbursedAmt"],
+      });
+    }
   });
 
 export const listExpensesQuerySchema = z.object({
@@ -96,6 +181,10 @@ export const listExpensesQuerySchema = z.object({
   childId: z.string().uuid().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  includeDerived: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
