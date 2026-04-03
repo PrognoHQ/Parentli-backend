@@ -188,6 +188,18 @@ enum ExpenseTimelineEntryType {
   reimbursement_amount_updated
   settled
   settlement_updated
+  series_created
+  series_paused
+  series_resumed
+  series_archived
+  detached_from_series
+  series_future_updated
+}
+
+enum ExpenseSeriesFrequency {
+  weekly
+  biweekly
+  monthly
 }
 
 enum ExpenseTimelineColor {
@@ -243,6 +255,7 @@ model Profile {
   rejectedExpenses           Expense[]               @relation("ExpenseRejecter")
   settledExpenses            Expense[]               @relation("ExpenseSettler")
   expenseTimelineEntries     ExpenseTimelineEntry[]   @relation("ExpenseTimelineActor")
+  createdExpenseSeries       ExpenseSeries[]          @relation("ExpenseSeriesCreator")
 
   @@map("profiles")
 }
@@ -285,6 +298,7 @@ model Household {
   // Phase 4: Expenses
   expenses                 Expense[]
   expenseTimelineEntries   ExpenseTimelineEntry[]
+  expenseSeries            ExpenseSeries[]
 
   @@map("households")
 }
@@ -380,7 +394,8 @@ model Category {
 
   household Household @relation(fields: [householdId], references: [id])
   creator   Profile   @relation(fields: [createdBy], references: [id])
-  expenses  Expense[]
+  expenses       Expense[]
+  expenseSeries  ExpenseSeries[]
 
   @@unique([householdId, slug])
   @@map("categories")
@@ -409,6 +424,7 @@ model Child {
   familyCircleLinks  FamilyCircleMemberChild[]
   events             Event[]                    @relation("EventPrimaryChild")
   expenses           Expense[]                  @relation("ExpensePrimaryChild")
+  expenseSeries      ExpenseSeries[]            @relation("ExpenseSeriesPrimaryChild")
 
   @@map("children")
 }
@@ -775,6 +791,9 @@ model Expense {
   settledByProfileId String?            @map("settled_by_profile_id") @db.Uuid
   settledAt          DateTime?          @map("settled_at")
   notes              String?
+  seriesId              String?  @map("series_id") @db.Uuid
+  seriesInstanceDate    DateTime? @map("series_instance_date") @db.Date
+  isDetachedFromSeries  Boolean  @default(false) @map("is_detached_from_series")
   deletedAt          DateTime?          @map("deleted_at")
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
@@ -786,11 +805,13 @@ model Expense {
   settledByProfile  Profile?  @relation("ExpenseSettler", fields: [settledByProfileId], references: [id])
   primaryChild      Child?    @relation("ExpensePrimaryChild", fields: [primaryChildId], references: [id])
   category          Category  @relation(fields: [categoryId], references: [id])
+  series            ExpenseSeries? @relation(fields: [seriesId], references: [id])
   timelineEntries   ExpenseTimelineEntry[]
 
   @@index([householdId, date])
   @@index([householdId, status])
   @@index([householdId, categoryId])
+  @@index([seriesId, seriesInstanceDate])
   @@map("expenses")
 }
 
@@ -812,4 +833,44 @@ model ExpenseTimelineEntry {
 
   @@index([expenseId])
   @@map("expense_timeline_entries")
+}
+
+// --- Phase 4D2: Recurring Expense Series ---
+model ExpenseSeries {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  householdId        String                  @map("household_id") @db.Uuid
+  createdByProfileId String                  @map("created_by_profile_id") @db.Uuid
+  description        String
+  amount             Decimal                 @db.Decimal(10, 2)
+  paidBy             ExpensePaidBy           @map("paid_by")
+  childScope         ExpenseChildScope       @map("child_scope")
+  primaryChildId     String?                 @map("primary_child_id") @db.Uuid
+  categoryId         String                  @map("category_id") @db.Uuid
+  splitPct           Int                     @default(50) @map("split_pct") @db.SmallInt
+  splitType          ExpenseSplitType        @default(default) @map("split_type")
+  splitReason        String?                 @map("split_reason")
+  notes              String?
+  reimbursable       Boolean                 @default(false)
+
+  frequency          ExpenseSeriesFrequency
+  intervalCount      Int                     @default(1) @map("interval_count")
+  dayOfMonth         Int?                    @map("day_of_month") @db.SmallInt
+  startDate          DateTime                @map("start_date") @db.Date
+  endDate            DateTime?               @map("end_date") @db.Date
+  nextGenerationDate DateTime?               @map("next_generation_date") @db.Date
+  paused             Boolean                 @default(false)
+  archivedAt         DateTime?               @map("archived_at")
+
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  household          Household               @relation(fields: [householdId], references: [id])
+  createdByProfile   Profile                 @relation("ExpenseSeriesCreator", fields: [createdByProfileId], references: [id])
+  primaryChild       Child?                  @relation("ExpenseSeriesPrimaryChild", fields: [primaryChildId], references: [id])
+  category           Category                @relation(fields: [categoryId], references: [id])
+  expenses           Expense[]
+
+  @@index([householdId])
+  @@index([householdId, paused])
+  @@map("expense_series")
 }

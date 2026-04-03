@@ -37,6 +37,9 @@ const EXPENSE_INCLUDE = {
   settledByProfile: {
     select: { id: true, firstName: true, lastName: true },
   },
+  series: {
+    select: { id: true, frequency: true, description: true, paused: true },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -58,6 +61,9 @@ interface DerivedFields {
   settlementMethod: string | null;
   settlementDate: string | null;
   settlementNote: string | null;
+  seriesId: string | null;
+  seriesInstanceDate: string | null;
+  isDetachedFromSeries: boolean;
 }
 
 function computeDerived(
@@ -95,6 +101,11 @@ function computeDerived(
       ? expense.settlementDate.toISOString().slice(0, 10)
       : null,
     settlementNote: expense.settlementNote,
+    seriesId: expense.seriesId,
+    seriesInstanceDate: expense.seriesInstanceDate
+      ? expense.seriesInstanceDate.toISOString().slice(0, 10)
+      : null,
+    isDetachedFromSeries: expense.isDetachedFromSeries,
   };
 }
 
@@ -251,6 +262,9 @@ export async function listExpenses(
   }
   if (query.childId) {
     where.primaryChildId = query.childId;
+  }
+  if (query.seriesId) {
+    where.seriesId = query.seriesId;
   }
   if (query.startDate || query.endDate) {
     where.date = {};

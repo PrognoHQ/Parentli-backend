@@ -10,9 +10,13 @@ import {
   updateReimbursementSchema,
   settleExpenseSchema,
   updateSettlementSchema,
+  createSeriesSchema,
+  updateSeriesSchema,
+  listSeriesQuerySchema,
 } from "./validators";
 import { MemberRole } from "./calculations";
 import * as workflow from "./workflow";
+import * as recurrence from "./recurrence";
 
 function getRequesterRole(req: AuthenticatedRequest): MemberRole {
   const role = req.membershipRole;
@@ -332,6 +336,200 @@ export async function updateSettlement(
       parsed.data
     );
     res.json(expense);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Recurring Expense Series (Phase 4D2)
+// ---------------------------------------------------------------------------
+
+export async function createSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req); // enforce parent-only
+
+    const parsed = createSeriesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const series = await recurrence.createSeries(
+      req.householdId,
+      req.userId,
+      parsed.data
+    );
+    res.status(201).json(series);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.householdId)
+      throw new AppError("No household.", 403);
+
+    getRequesterRole(req);
+
+    const parsed = listSeriesQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const result = await recurrence.listSeries(req.householdId, parsed.data);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getSeriesDetailHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.householdId)
+      throw new AppError("No household.", 403);
+
+    getRequesterRole(req);
+
+    const detail = await recurrence.getSeriesDetail(
+      req.params.seriesId as string,
+      req.householdId
+    );
+    res.json(detail);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req);
+
+    const parsed = updateSeriesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    if (parsed.data.editScope === "single") {
+      // For single edits, the expenseId comes from the URL
+      const expenseId = req.params.expenseId as string | undefined;
+      if (!expenseId) {
+        throw new AppError("expenseId is required for single instance edits.", 400);
+      }
+      const result = await recurrence.updateSeriesSingleInstance(
+        expenseId as string,
+        req.householdId,
+        req.userId,
+        parsed.data
+      );
+      res.json(result);
+    } else {
+      // future scope — seriesId from URL
+      const result = await recurrence.updateSeriesFuture(
+        req.params.seriesId as string,
+        req.householdId,
+        req.userId,
+        parsed.data
+      );
+      res.json(result);
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function pauseSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req);
+
+    const result = await recurrence.pauseSeries(
+      req.params.seriesId as string,
+      req.householdId,
+      req.userId
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resumeSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req);
+
+    const result = await recurrence.resumeSeries(
+      req.params.seriesId as string,
+      req.householdId,
+      req.userId
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function archiveSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req);
+
+    const result = await recurrence.archiveSeries(
+      req.params.seriesId as string,
+      req.householdId,
+      req.userId
+    );
+    res.json(result);
   } catch (err) {
     next(err);
   }

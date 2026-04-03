@@ -181,6 +181,7 @@ export const listExpensesQuerySchema = z.object({
     .optional(),
   categoryId: z.string().uuid().optional(),
   childId: z.string().uuid().optional(),
+  seriesId: z.string().uuid().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   includeDerived: z
@@ -340,3 +341,96 @@ export type UpdateSettlementInput = z.infer<typeof updateSettlementSchema>;
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
 export type UpdateExpenseInput = z.infer<typeof updateExpenseSchema>;
 export type ListExpensesQuery = z.infer<typeof listExpensesQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Recurring Series Schemas (Phase 4D2)
+// ---------------------------------------------------------------------------
+
+const frequencyEnum = z.enum(["weekly", "biweekly", "monthly"]);
+
+const dateStringSchema = z
+  .string()
+  .min(1)
+  .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v), {
+    message: "Must be in YYYY-MM-DD format",
+  })
+  .refine((v) => !isNaN(new Date(v).getTime()), {
+    message: "Must be a valid date",
+  });
+
+export const createSeriesSchema = z
+  .object({
+    description: z.string().min(1, "Description is required").max(500),
+    amount: z.number().positive("Amount must be greater than 0"),
+    paidBy: z.enum(["owner", "coparent"]),
+    childScope: z.enum(["both", "single"]),
+    primaryChildId: z.string().uuid().optional().nullable(),
+    categoryId: z.string().uuid("Category is required"),
+    splitPct: z.number().int().min(0).max(100).optional(),
+    notes: z.string().max(2000).optional().nullable(),
+    reimbursable: z.boolean().optional().default(false),
+    frequency: frequencyEnum,
+    startDate: dateStringSchema,
+    endDate: dateStringSchema.optional().nullable(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.childScope === "single" && !data.primaryChildId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "primaryChildId is required when childScope is single",
+        path: ["primaryChildId"],
+      });
+    }
+
+    if (data.endDate) {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      if (end < start) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "endDate must not precede startDate",
+          path: ["endDate"],
+        });
+      }
+    }
+  });
+
+export type CreateSeriesInput = z.infer<typeof createSeriesSchema>;
+
+export const updateSeriesSchema = z
+  .object({
+    editScope: z.enum(["single", "future"]),
+    // For single scope, expenseId is used from the URL param
+    description: z.string().min(1).max(500).optional(),
+    amount: z.number().positive("Amount must be greater than 0").optional(),
+    paidBy: z.enum(["owner", "coparent"]).optional(),
+    childScope: z.enum(["both", "single"]).optional(),
+    primaryChildId: z.string().uuid().optional().nullable(),
+    categoryId: z.string().uuid().optional(),
+    splitPct: z.number().int().min(0).max(100).optional(),
+    notes: z.string().max(2000).optional().nullable(),
+    reimbursable: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.childScope === "single" && data.primaryChildId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "primaryChildId is required when childScope is changed to single",
+        path: ["primaryChildId"],
+      });
+    }
+  });
+
+export type UpdateSeriesInput = z.infer<typeof updateSeriesSchema>;
+
+export const listSeriesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  includeArchived: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
+});
+
+export type ListSeriesQuery = z.infer<typeof listSeriesQuerySchema>;
