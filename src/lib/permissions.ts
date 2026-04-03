@@ -23,6 +23,8 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "family_circle:manage",
     "events:read",
     "events:write",
+    "expenses:read",
+    "expenses:write",
   ],
   coparent: [
     "children:read",
@@ -38,6 +40,8 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "family_circle:manage",
     "events:read",
     "events:write",
+    "expenses:read",
+    "expenses:write",
   ],
 };
 

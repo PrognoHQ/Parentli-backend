@@ -124,6 +124,25 @@ enum EventNotificationType {
   event_updated
 }
 
+// --- Phase 4 Enums ---
+enum ExpenseChildScope {
+  both
+  single
+}
+
+enum ExpenseStatus {
+  draft
+  awaiting
+  approved
+  rejected
+  settled
+}
+
+enum ExpensePaidBy {
+  owner
+  coparent
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -164,6 +183,9 @@ model Profile {
   resolvedApprovalRequests   EventApprovalRequest[]  @relation("ApprovalResolver")
   targetedNotifications      EventNotification[]     @relation("NotificationTarget")
 
+  // Phase 4: Expenses
+  createdExpenses            Expense[]               @relation("ExpenseCreator")
+
   @@map("profiles")
 }
 
@@ -201,6 +223,9 @@ model Household {
   eventTimelineEntries     EventTimelineEntry[]
   eventApprovalRequests    EventApprovalRequest[]
   eventNotifications       EventNotification[]
+
+  // Phase 4: Expenses
+  expenses                 Expense[]
 
   @@map("households")
 }
@@ -296,6 +321,7 @@ model Category {
 
   household Household @relation(fields: [householdId], references: [id])
   creator   Profile   @relation(fields: [createdBy], references: [id])
+  expenses  Expense[]
 
   @@unique([householdId, slug])
   @@map("categories")
@@ -323,6 +349,7 @@ model Child {
   emergencyContacts  EmergencyContact[]
   familyCircleLinks  FamilyCircleMemberChild[]
   events             Event[]                    @relation("EventPrimaryChild")
+  expenses           Expense[]                  @relation("ExpensePrimaryChild")
 
   @@map("children")
 }
@@ -651,4 +678,34 @@ model EventNotification {
   @@index([eventId])
   @@index([processedAt])
   @@map("event_notifications")
+}
+
+// --- Phase 4: Expenses ---
+model Expense {
+  id                 String             @id @default(uuid()) @db.Uuid
+  householdId        String             @map("household_id") @db.Uuid
+  createdByProfileId String             @map("created_by_profile_id") @db.Uuid
+  description        String
+  amount             Decimal            @db.Decimal(10, 2)
+  paidBy             ExpensePaidBy      @map("paid_by")
+  date               DateTime           @db.Date
+  childScope         ExpenseChildScope  @map("child_scope")
+  primaryChildId     String?            @map("primary_child_id") @db.Uuid
+  categoryId         String             @map("category_id") @db.Uuid
+  status             ExpenseStatus      @default(draft)
+  splitPct           Int                @default(50) @map("split_pct") @db.SmallInt
+  notes              String?
+  deletedAt          DateTime?          @map("deleted_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  household        Household @relation(fields: [householdId], references: [id])
+  createdByProfile Profile   @relation("ExpenseCreator", fields: [createdByProfileId], references: [id])
+  primaryChild     Child?    @relation("ExpensePrimaryChild", fields: [primaryChildId], references: [id])
+  category         Category  @relation(fields: [categoryId], references: [id])
+
+  @@index([householdId, date])
+  @@index([householdId, status])
+  @@index([householdId, categoryId])
+  @@map("expenses")
 }
