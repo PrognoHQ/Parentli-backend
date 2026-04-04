@@ -27,6 +27,10 @@ const EXPENSE_INCLUDE = {
   settledByProfile: {
     select: { id: true, firstName: true, lastName: true },
   },
+  timelineEntries: {
+    orderBy: { createdAt: "asc" as const },
+    select: { id: true, entryType: true, label: true, detail: true, color: true, createdAt: true },
+  },
 };
 
 // ---------------------------------------------------------------------------
