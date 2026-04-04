@@ -25,6 +25,8 @@ export const createExpenseSchema = z
     reimbursable: z.boolean().optional().default(false),
     reimbursedAmt: z.number().min(0).optional().default(0),
     reimbursementStatus: reimbursementStatusEnum.optional().default("none"),
+    reimbursementSource: z.string().max(500).optional().nullable(),
+    reimbursedAmtExpected: z.number().min(0).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     if (data.childScope === "single" && !data.primaryChildId) {
@@ -104,6 +106,8 @@ export const updateExpenseSchema = z
     reimbursable: z.boolean().optional(),
     reimbursedAmt: z.number().min(0).optional(),
     reimbursementStatus: reimbursementStatusEnum.optional(),
+    reimbursementSource: z.string().max(500).optional().nullable(),
+    reimbursedAmtExpected: z.number().min(0).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     if (data.childScope === "single" && data.primaryChildId === undefined) {

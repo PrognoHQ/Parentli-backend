@@ -40,6 +40,10 @@ const EXPENSE_INCLUDE = {
   series: {
     select: { id: true, frequency: true, description: true, paused: true },
   },
+  timelineEntries: {
+    orderBy: { createdAt: "asc" as const },
+    select: { id: true, entryType: true, label: true, detail: true, color: true, createdAt: true },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -215,6 +219,10 @@ export async function createExpense(
         reimbursable: data.reimbursable ?? false,
         reimbursedAmt: new Prisma.Decimal(data.reimbursedAmt ?? 0),
         reimbursementStatus: data.reimbursementStatus ?? "none",
+        reimbursementSource: data.reimbursementSource ?? null,
+        reimbursedAmtExpected: data.reimbursedAmtExpected != null
+          ? new Prisma.Decimal(data.reimbursedAmtExpected)
+          : null,
         notes: data.notes ?? null,
       },
       include: EXPENSE_INCLUDE,
@@ -492,6 +500,12 @@ export async function updateExpense(
     updateData.reimbursedAmt = new Prisma.Decimal(data.reimbursedAmt);
   if (data.reimbursementStatus !== undefined)
     updateData.reimbursementStatus = data.reimbursementStatus;
+  if (data.reimbursementSource !== undefined)
+    updateData.reimbursementSource = data.reimbursementSource;
+  if (data.reimbursedAmtExpected !== undefined)
+    updateData.reimbursedAmtExpected = data.reimbursedAmtExpected != null
+      ? new Prisma.Decimal(data.reimbursedAmtExpected)
+      : null;
 
   // Apply split resolution
   if (splitUpdate.splitPct !== undefined) updateData.splitPct = splitUpdate.splitPct;
