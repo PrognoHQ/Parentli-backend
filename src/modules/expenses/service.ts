@@ -41,8 +41,8 @@ const EXPENSE_INCLUDE = {
     select: { id: true, frequency: true, description: true, paused: true },
   },
   timelineEntries: {
-    orderBy: { createdAt: "asc" as const },
     select: { id: true, entryType: true, label: true, detail: true, color: true, createdAt: true },
+    orderBy: { createdAt: "asc" as const },
   },
 };
 
