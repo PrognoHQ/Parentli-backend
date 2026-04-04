@@ -27,6 +27,7 @@ router.put("/series/:seriesId/instance/:expenseId", auth, tenant, canWrite, cont
 router.post("/series/:seriesId/pause", auth, tenant, canWrite, controller.pauseSeriesHandler);
 router.post("/series/:seriesId/resume", auth, tenant, canWrite, controller.resumeSeriesHandler);
 router.post("/series/:seriesId/archive", auth, tenant, canWrite, controller.archiveSeriesHandler);
+router.post("/series/:seriesId/generate", auth, tenant, canWrite, controller.generateSeriesHandler);
 
 router.post("/", auth, tenant, canWrite, controller.create);
 router.get("/", auth, tenant, canRead, controller.list);

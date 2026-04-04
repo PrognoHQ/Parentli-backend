@@ -434,3 +434,12 @@ export const listSeriesQuerySchema = z.object({
 });
 
 export type ListSeriesQuery = z.infer<typeof listSeriesQuerySchema>;
+
+export const generateSeriesSchema = z.object({
+  upToDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "upToDate must be YYYY-MM-DD")
+    .optional(),
+});
+
+export type GenerateSeriesInput = z.infer<typeof generateSeriesSchema>;

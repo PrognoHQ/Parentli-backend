@@ -587,9 +587,15 @@ export async function pauseSeries(
   if (series.archivedAt) throw new AppError("Cannot pause an archived series.", 400);
   if (series.paused) throw new AppError("Series is already paused.", 400);
 
-  await prisma.expenseSeries.update({
-    where: { id: seriesId },
-    data: { paused: true },
+  await prisma.$transaction(async (tx) => {
+    await tx.expenseSeries.update({
+      where: { id: seriesId },
+      data: { paused: true },
+    });
+
+    await createSeriesLifecycleTimeline(
+      tx, seriesId, householdId, actorProfileId, "series_paused", "Recurring series paused"
+    );
   });
 
   return { id: seriesId, paused: true };
@@ -607,9 +613,15 @@ export async function resumeSeries(
   if (series.archivedAt) throw new AppError("Cannot resume an archived series.", 400);
   if (!series.paused) throw new AppError("Series is not paused.", 400);
 
-  await prisma.expenseSeries.update({
-    where: { id: seriesId },
-    data: { paused: false },
+  await prisma.$transaction(async (tx) => {
+    await tx.expenseSeries.update({
+      where: { id: seriesId },
+      data: { paused: false },
+    });
+
+    await createSeriesLifecycleTimeline(
+      tx, seriesId, householdId, actorProfileId, "series_resumed", "Recurring series resumed"
+    );
   });
 
   return { id: seriesId, paused: false };
@@ -626,12 +638,56 @@ export async function archiveSeries(
   if (!series) throw new AppError("Expense series not found.", 404);
   if (series.archivedAt) throw new AppError("Series is already archived.", 400);
 
-  await prisma.expenseSeries.update({
-    where: { id: seriesId },
-    data: { archivedAt: new Date(), paused: true },
+  await prisma.$transaction(async (tx) => {
+    await tx.expenseSeries.update({
+      where: { id: seriesId },
+      data: { archivedAt: new Date(), paused: true },
+    });
+
+    await createSeriesLifecycleTimeline(
+      tx, seriesId, householdId, actorProfileId, "series_archived", "Recurring series archived"
+    );
   });
 
   return { id: seriesId, archivedAt: true };
+}
+
+/**
+ * Create a timeline entry on the most recent non-detached instance of a series.
+ * If no instances exist, the timeline entry is skipped (the series model itself
+ * records paused/archivedAt timestamps as the primary audit trail).
+ */
+async function createSeriesLifecycleTimeline(
+  tx: Prisma.TransactionClient,
+  seriesId: string,
+  householdId: string,
+  actorProfileId: string,
+  entryType: "series_paused" | "series_resumed" | "series_archived",
+  label: string
+) {
+  const latestInstance = await tx.expense.findFirst({
+    where: {
+      seriesId,
+      householdId,
+      deletedAt: null,
+      isDetachedFromSeries: false,
+    },
+    orderBy: { seriesInstanceDate: "desc" },
+    select: { id: true },
+  });
+
+  if (latestInstance) {
+    await tx.expenseTimelineEntry.create({
+      data: {
+        householdId,
+        expenseId: latestInstance.id,
+        actorProfileId,
+        entryType,
+        label,
+        color: "muted",
+      },
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

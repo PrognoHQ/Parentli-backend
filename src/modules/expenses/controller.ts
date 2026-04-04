@@ -13,6 +13,7 @@ import {
   createSeriesSchema,
   updateSeriesSchema,
   listSeriesQuerySchema,
+  generateSeriesSchema,
 } from "./validators";
 import { MemberRole } from "./calculations";
 import * as workflow from "./workflow";
@@ -528,6 +529,41 @@ export async function archiveSeriesHandler(
       req.params.seriesId as string,
       req.householdId,
       req.userId
+    );
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function generateSeriesHandler(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    getRequesterRole(req);
+
+    const parsed = generateSeriesSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Validation error: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
+    }
+
+    const upToDate = parsed.data.upToDate
+      ? new Date(parsed.data.upToDate)
+      : undefined;
+
+    const result = await recurrence.generateSeriesInstances(
+      req.params.seriesId as string,
+      req.householdId,
+      req.userId,
+      upToDate
     );
     res.json(result);
   } catch (err) {
