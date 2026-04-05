@@ -1,6 +1,9 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../types";
 import { SendMessageInput, ListMessagesQuery } from "./validators";
+import { validateAndCreateSharedContent } from "./sharedContent";
+import { validateAndCreateAttachments } from "./attachments";
+import { getMessagesWithReadModel } from "./queries";
 
 const senderSelect = {
   senderProfile: {
@@ -46,24 +49,6 @@ const replySelect = {
   },
 } as const;
 
-const reactionsSelect = {
-  reactions: {
-    select: {
-      id: true,
-      emoji: true,
-      actorKind: true,
-      actorProfileId: true,
-      actorFamilyCircleMemberId: true,
-      actorProfile: {
-        select: { id: true, firstName: true, lastName: true },
-      },
-      actorFamilyCircleMember: {
-        select: { id: true, name: true },
-      },
-    },
-  },
-} as const;
-
 /**
  * Verify that a profile is an active member of a conversation.
  * Returns the conversation member record or throws 403.
@@ -91,6 +76,7 @@ export async function verifyConversationMembership(
 
 /**
  * Send a message to a conversation.
+ * Supports optional shared content and attachments.
  */
 export async function sendMessage(
   householdId: string,
@@ -131,7 +117,7 @@ export async function sendMessage(
     }
   }
 
-  // Create message, generate receipts, and touch conversation updatedAt in a transaction
+  // Create message, shared content, attachments, receipts, and touch conversation in a transaction
   const message = await prisma.$transaction(async (tx) => {
     const created = await tx.message.create({
       data: {
@@ -148,6 +134,28 @@ export async function sendMessage(
         ...replySelect,
       },
     });
+
+    // Create shared content if provided
+    let sharedContent = null;
+    if (data.sharedContent) {
+      sharedContent = await validateAndCreateSharedContent(
+        tx,
+        householdId,
+        created.id,
+        data.sharedContent
+      );
+    }
+
+    // Create attachments if provided
+    let attachments: any[] = [];
+    if (data.attachments && data.attachments.length > 0) {
+      attachments = await validateAndCreateAttachments(
+        tx,
+        householdId,
+        created.id,
+        data.attachments
+      );
+    }
 
     // Generate receipt rows for every other active conversation member (not sender)
     const members = await tx.conversationMember.findMany({
@@ -178,14 +186,14 @@ export async function sendMessage(
       data: { updatedAt: new Date() },
     });
 
-    return created;
+    return { ...created, sharedContent, attachments };
   });
 
   return message;
 }
 
 /**
- * List messages in a conversation with pagination.
+ * List messages in a conversation with the unified read model.
  * Excludes messages deleted "for me" by the requesting profile.
  */
 export async function listMessages(
@@ -210,46 +218,13 @@ export async function listMessages(
   // Validate requester is active member
   await verifyConversationMembership(conversationId, profileId, householdId);
 
-  const { page, limit } = query;
-
-  // Exclude messages this actor has deleted (both for_me and for_everyone).
-  // for_me: only hidden from this actor. for_everyone: sender already nulled
-  // the text, but we also hide the tombstone from their own view.
-  const where = {
-    conversationId,
+  return getMessagesWithReadModel(
     householdId,
-    deletions: {
-      none: {
-        actorProfileId: profileId,
-      },
-    },
-  };
-
-  const [messages, total] = await Promise.all([
-    prisma.message.findMany({
-      where,
-      include: {
-        ...senderSelect,
-        ...replySelect,
-        ...reactionsSelect,
-      },
-      orderBy: { createdAt: "asc" as const },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.message.count({ where }),
-  ]);
-
-  // Suppress reactions on globally deleted messages
-  const data = messages.map((msg) => {
-    const meta = msg.metadata as Record<string, unknown>;
-    if (meta?.deleted === true) {
-      return { ...msg, reactions: [] };
-    }
-    return msg;
-  });
-
-  return { data, total, page, limit };
+    conversationId,
+    profileId,
+    query.page,
+    query.limit
+  );
 }
 
 /**

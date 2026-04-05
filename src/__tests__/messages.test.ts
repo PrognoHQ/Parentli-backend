@@ -17,6 +17,9 @@ const mockConversationUpdate = vi.fn();
 const mockConversationMemberFindMany = vi.fn();
 const mockReceiptCreateMany = vi.fn();
 const mockTransaction = vi.fn();
+const mockExpenseFindMany = vi.fn();
+const mockEventFindMany = vi.fn();
+const mockNoteFindMany = vi.fn();
 
 vi.mock("../lib/prisma", () => ({
   prisma: {
@@ -34,6 +37,15 @@ vi.mock("../lib/prisma", () => ({
     messageDeletion: {
       findMany: (...args: unknown[]) => mockMessageDeletionFindMany(...args),
       upsert: (...args: unknown[]) => mockMessageDeletionUpsert(...args),
+    },
+    expense: {
+      findMany: (...args: unknown[]) => mockExpenseFindMany(...args),
+    },
+    event: {
+      findMany: (...args: unknown[]) => mockEventFindMany(...args),
+    },
+    note: {
+      findMany: (...args: unknown[]) => mockNoteFindMany(...args),
     },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
   },
@@ -81,11 +93,26 @@ function makeMessage(overrides: Record<string, unknown> = {}) {
     conversationId: CONV_ID,
     senderKind: "profile",
     senderProfileId: PROFILE_A,
+    senderFamilyCircleMemberId: null,
     type: "text",
     text: "Hello",
     replyToMessageId: null,
     metadata: {},
     createdAt: new Date("2026-01-01T10:00:00Z"),
+    updatedAt: new Date("2026-01-01T10:00:00Z"),
+    editedAt: null,
+    senderProfile: {
+      id: PROFILE_A,
+      firstName: "Alice",
+      lastName: "Smith",
+      avatarUrl: null,
+    },
+    senderFamilyCircleMember: null,
+    replyToMessage: null,
+    reactions: [],
+    attachments: [],
+    sharedContent: null,
+    receipts: [],
     ...overrides,
   };
 }
@@ -121,6 +148,10 @@ beforeEach(() => {
   // Default: return sender only so receipt generation produces no receipts
   mockConversationMemberFindMany.mockResolvedValue([makeMember()]);
   mockReceiptCreateMany.mockResolvedValue({ count: 0 });
+  // Defaults for read model batch preview fetches
+  mockExpenseFindMany.mockResolvedValue([]);
+  mockEventFindMany.mockResolvedValue([]);
+  mockNoteFindMany.mockResolvedValue([]);
 });
 
 // ---------------------------------------------------------------------------
@@ -143,7 +174,7 @@ describe("sendMessage", () => {
       text: "Hello",
     });
 
-    expect(result).toEqual(created);
+    expect(result).toMatchObject(created);
     // Verify conversation was looked up with householdId
     expect(mockConversationFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -325,7 +356,15 @@ describe("listMessages", () => {
       limit: 20,
     });
 
-    expect(result.data).toEqual(messages);
+    // Read model returns transformed shape
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toMatchObject({
+      id: MSG_ID,
+      conversationId: CONV_ID,
+      type: "text",
+      text: "Hello",
+      deleted: false,
+    });
     expect(result.total).toBe(2);
     expect(result.page).toBe(1);
     expect(result.limit).toBe(20);
@@ -401,6 +440,36 @@ describe("listMessages", () => {
         }),
       })
     );
+  });
+
+  it("suppresses reactions on globally deleted messages", async () => {
+    mockConversationFindFirst.mockResolvedValue(makeConversation());
+    mockConversationMemberFindFirst.mockResolvedValue(makeMember());
+
+    mockMessageFindMany.mockResolvedValue([
+      makeMessage({
+        metadata: { deleted: true },
+        text: null,
+        reactions: [
+          { emoji: "👍", actorProfileId: PROFILE_A, actorFamilyCircleMemberId: null },
+        ],
+        attachments: [
+          { fileName: "file.pdf", fileType: "pdf", fileSize: 100, fileUrl: "https://x.com/f" },
+        ],
+      }),
+    ]);
+    mockMessageCount.mockResolvedValue(1);
+
+    const result = await listMessages(HH_ID, CONV_ID, PROFILE_A, {
+      page: 1,
+      limit: 20,
+    });
+
+    const msg = result.data[0];
+    expect(msg.deleted).toBe(true);
+    expect(msg.reactions).toEqual([]);
+    expect(msg.attachments).toEqual([]);
+    expect(msg.sharedContent).toBeNull();
   });
 
   it("orders messages by createdAt ascending", async () => {

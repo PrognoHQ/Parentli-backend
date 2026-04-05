@@ -287,6 +287,9 @@ model Profile {
   messageReactions           MessageReaction[]        @relation("MessageReactionActor")
   messageReceipts            MessageReceipt[]         @relation("MessageReceiptRecipient")
 
+  // Phase 5D: Notes
+  createdNotes               Note[]                   @relation("NoteCreator")
+
   @@map("profiles")
 }
 
@@ -341,6 +344,11 @@ model Household {
   // Phase 5C: Reactions & Receipts
   messageReactions         MessageReaction[]
   messageReceipts          MessageReceipt[]
+
+  // Phase 5D: Shared Content, Attachments & Notes
+  notes                    Note[]
+  messageSharedContents    MessageSharedContent[]
+  messageAttachments       MessageAttachment[]
 
   @@map("households")
 }
@@ -467,6 +475,7 @@ model Child {
   events             Event[]                    @relation("EventPrimaryChild")
   expenses           Expense[]                  @relation("ExpensePrimaryChild")
   expenseSeries      ExpenseSeries[]            @relation("ExpenseSeriesPrimaryChild")
+  notes              Note[]                     @relation("NoteChild")
 
   @@map("children")
 }
@@ -711,6 +720,7 @@ model Event {
   timelineEntries    EventTimelineEntry[]
   approvalRequests   EventApprovalRequest[]
   notifications      EventNotification[]
+  sharedContents     MessageSharedContent[]
 
   @@index([householdId, startAt])
   @@index([householdId, approvalStatus])
@@ -858,6 +868,7 @@ model Expense {
   category          Category  @relation(fields: [categoryId], references: [id])
   series            ExpenseSeries? @relation(fields: [seriesId], references: [id])
   timelineEntries   ExpenseTimelineEntry[]
+  sharedContents    MessageSharedContent[]
 
   @@index([householdId, date])
   @@index([householdId, status])
@@ -956,6 +967,12 @@ enum MessageReceiptRecipientKind {
   family_circle
 }
 
+enum MessageSharedContentType {
+  expense
+  event
+  note
+}
+
 // --- Phase 5A: Conversations ---
 model Conversation {
   id                 String                    @id @default(uuid()) @db.Uuid
@@ -1025,6 +1042,8 @@ model Message {
   deletions                MessageDeletion[]
   reactions                MessageReaction[]
   receipts                 MessageReceipt[]
+  attachments              MessageAttachment[]
+  sharedContent            MessageSharedContent?
 
   @@index([conversationId, createdAt])
   @@index([householdId])
@@ -1096,4 +1115,65 @@ model MessageReceipt {
   @@index([householdId])
   @@index([recipientProfileId])
   @@map("message_receipts")
+}
+
+// --- Phase 5D: Notes ---
+model Note {
+  id                 String    @id @default(uuid()) @db.Uuid
+  householdId        String    @map("household_id") @db.Uuid
+  childId            String?   @map("child_id") @db.Uuid
+  createdByProfileId String    @map("created_by_profile_id") @db.Uuid
+  title              String
+  text               String
+  deletedAt          DateTime? @map("deleted_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  household        Household @relation(fields: [householdId], references: [id])
+  child            Child?    @relation("NoteChild", fields: [childId], references: [id])
+  createdByProfile Profile   @relation("NoteCreator", fields: [createdByProfileId], references: [id])
+  sharedContents   MessageSharedContent[]
+
+  @@index([householdId])
+  @@map("notes")
+}
+
+// --- Phase 5D: Message Shared Content ---
+model MessageSharedContent {
+  id          String                   @id @default(uuid()) @db.Uuid
+  householdId String                   @map("household_id") @db.Uuid
+  messageId   String                   @unique @map("message_id") @db.Uuid
+  contentType MessageSharedContentType @map("content_type")
+  expenseId   String?                  @map("expense_id") @db.Uuid
+  eventId     String?                  @map("event_id") @db.Uuid
+  noteId      String?                  @map("note_id") @db.Uuid
+  createdAt   DateTime                 @default(now()) @map("created_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  message   Message   @relation(fields: [messageId], references: [id])
+  expense   Expense?  @relation(fields: [expenseId], references: [id])
+  event     Event?    @relation(fields: [eventId], references: [id])
+  note      Note?     @relation(fields: [noteId], references: [id])
+
+  @@index([householdId])
+  @@map("message_shared_contents")
+}
+
+// --- Phase 5D: Message Attachments ---
+model MessageAttachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  messageId   String   @map("message_id") @db.Uuid
+  fileName    String   @map("file_name")
+  fileType    String   @map("file_type")
+  fileSize    Int      @map("file_size")
+  fileUrl     String   @map("file_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  household Household @relation(fields: [householdId], references: [id])
+  message   Message   @relation(fields: [messageId], references: [id])
+
+  @@index([messageId])
+  @@index([householdId])
+  @@map("message_attachments")
 }
