@@ -90,6 +90,7 @@ export async function removeReaction(
 
   const { count } = await prisma.messageReaction.deleteMany({
     where: {
+      householdId,
       messageId,
       actorKind: "profile",
       actorProfileId: profileId,
