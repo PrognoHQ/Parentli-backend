@@ -1025,5 +1025,6 @@ model MessageDeletion {
 
   @@unique([messageId, actorProfileId])
   @@index([householdId])
+  @@index([actorProfileId])
   @@map("message_deletions")
 }

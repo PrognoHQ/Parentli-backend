@@ -49,7 +49,8 @@ export async function getOrCreateCoparentConversation(
   // Create new coparent conversation in a transaction
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Get all active household members (owner + coparent)
+      // Get all active household members (owner + coparent only — no Family
+      // Circle). This ensures FC members never have access to the co-parent thread.
       const householdMembers = await tx.householdMember.findMany({
         where: { householdId, status: "active" },
         select: { profileId: true },
