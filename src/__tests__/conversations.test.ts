@@ -35,6 +35,7 @@ import {
   listConversations,
   getConversationDetail,
 } from "../modules/conversations/service";
+import { createGroupConversationSchema } from "../modules/conversations/validators";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -171,6 +172,32 @@ describe("getOrCreateCoparentConversation", () => {
     ).rejects.toThrow("No active household members found.");
   });
 
+  it("only adds profile members to coparent conversation (no Family Circle)", async () => {
+    mockConversationFindFirst.mockResolvedValue(null);
+    setupTransaction();
+
+    // Household members only includes profiles - Family Circle is separate
+    mockHouseholdMemberFindMany.mockResolvedValue([
+      { profileId: PROFILE_A },
+      { profileId: PROFILE_B },
+    ]);
+
+    const created = makeConversation();
+    mockConversationCreate.mockResolvedValue({ id: CONV_ID });
+    mockConversationMemberCreateMany.mockResolvedValue({ count: 2 });
+    mockConversationFindUniqueOrThrow.mockResolvedValue(created);
+
+    await getOrCreateCoparentConversation(HH_ID, PROFILE_A);
+
+    const createManyCall = mockConversationMemberCreateMany.mock.calls[0][0];
+    // All members must be profile kind
+    for (const row of createManyCall.data) {
+      expect(row.memberKind).toBe("profile");
+      expect(row.profileId).toBeTruthy();
+      expect(row.familyCircleMemberId).toBeUndefined();
+    }
+  });
+
   it("handles P2002 race condition by retrying findFirst", async () => {
     // First findFirst returns null (no existing)
     mockConversationFindFirst.mockResolvedValueOnce(null);
@@ -302,6 +329,24 @@ describe("createGroupConversation", () => {
     expect(fcIds).toContain(FC_MEMBER_ID);
   });
 
+  it("throws when group has fewer than 2 members", async () => {
+    await expect(
+      createGroupConversation(HH_ID, PROFILE_A, {
+        memberIds: [],
+      })
+    ).rejects.toThrow("Group conversation must have at least 2 members.");
+  });
+
+  it("throws when only creator is the sole member", async () => {
+    // Creator is auto-added, but if no other members are specified, total = 1
+    await expect(
+      createGroupConversation(HH_ID, PROFILE_A, {
+        name: "Solo",
+        memberIds: [],
+      })
+    ).rejects.toThrow("Group conversation must have at least 2 members.");
+  });
+
   it("throws for invalid purposeBadge", async () => {
     await expect(
       createGroupConversation(HH_ID, PROFILE_A, {
@@ -429,5 +474,52 @@ describe("getConversationDetail", () => {
     await expect(
       getConversationDetail(HH_ID, CONV_ID, PROFILE_A)
     ).rejects.toThrow("Not a member of this conversation.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Zod validators
+// ---------------------------------------------------------------------------
+
+describe("createGroupConversationSchema", () => {
+  it("accepts valid input with all fields", () => {
+    const result = createGroupConversationSchema.safeParse({
+      name: "School Chat",
+      purposeBadge: "school",
+      memberIds: [
+        { kind: "profile", id: "550e8400-e29b-41d4-a716-446655440000" },
+        { kind: "family_circle", id: "550e8400-e29b-41d4-a716-446655440001" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts minimal input with no optional fields", () => {
+    const result = createGroupConversationSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.memberIds).toEqual([]);
+    }
+  });
+
+  it("rejects invalid purposeBadge", () => {
+    const result = createGroupConversationSchema.safeParse({
+      purposeBadge: "invalid",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid member kind", () => {
+    const result = createGroupConversationSchema.safeParse({
+      memberIds: [{ kind: "unknown", id: "550e8400-e29b-41d4-a716-446655440000" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-uuid member id", () => {
+    const result = createGroupConversationSchema.safeParse({
+      memberIds: [{ kind: "profile", id: "not-a-uuid" }],
+    });
+    expect(result.success).toBe(false);
   });
 });

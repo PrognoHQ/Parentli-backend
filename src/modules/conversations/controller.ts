@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, AppError } from "../../types";
 import * as conversationService from "./service";
+import { createGroupConversationSchema } from "./validators";
 
 export async function getOrCreateCoparent(
   req: AuthenticatedRequest,
@@ -31,16 +32,18 @@ export async function createGroup(
     if (!req.userId || !req.householdId)
       throw new AppError("Not authenticated or no household.", 401);
 
-    const { name, purposeBadge, memberIds } = req.body;
-
-    if (memberIds !== undefined && !Array.isArray(memberIds)) {
-      throw new AppError("memberIds must be an array.", 400);
+    const parsed = createGroupConversationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new AppError(
+        `Invalid input: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        400
+      );
     }
 
     const conversation = await conversationService.createGroupConversation(
       req.householdId,
       req.userId,
-      { name, purposeBadge, memberIds }
+      parsed.data
     );
     res.status(201).json(conversation);
   } catch (err) {

@@ -12,7 +12,7 @@ const canRead = requireCapability("conversations:read");
 const canWrite = requireCapability("conversations:write");
 
 router.post("/coparent", auth, tenant, canWrite, controller.getOrCreateCoparent);
-router.post("/group", auth, tenant, canWrite, controller.createGroup);
+router.post("/groups", auth, tenant, canWrite, controller.createGroup);
 router.get("/", auth, tenant, canRead, controller.list);
 router.get("/:id", auth, tenant, canRead, controller.getDetail);
 

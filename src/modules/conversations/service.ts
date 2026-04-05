@@ -26,6 +26,7 @@ const conversationWithMembers = {
           id: true,
           name: true,
           relationship: true,
+          role: true,
           avatarUrl: true,
         },
       },
@@ -173,6 +174,18 @@ export async function createGroupConversation(
     }
   }
 
+  // Ensure at least 2 active members (creator + at least one other)
+  const creatorAlreadyIncluded = profileMembers.some(
+    (m) => m.id === profileId
+  );
+  const totalMembers = memberIds.length + (creatorAlreadyIncluded ? 0 : 1);
+  if (totalMembers < 2) {
+    throw new AppError(
+      "Group conversation must have at least 2 members.",
+      400
+    );
+  }
+
   const result = await prisma.$transaction(async (tx) => {
     const conversation = await tx.conversation.create({
       data: {
@@ -185,11 +198,6 @@ export async function createGroupConversation(
         createdByProfileId: profileId,
       },
     });
-
-    // Build member rows, always including creator
-    const creatorAlreadyIncluded = profileMembers.some(
-      (m) => m.id === profileId
-    );
 
     const memberRows: Array<{
       householdId: string;
@@ -267,6 +275,7 @@ export async function listConversations(
               id: true,
               name: true,
               relationship: true,
+              role: true,
               avatarUrl: true,
             },
           },
