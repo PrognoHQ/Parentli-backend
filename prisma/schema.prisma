@@ -919,6 +919,7 @@ model Conversation {
   createdByProfile Profile?             @relation("ConversationCreator", fields: [createdByProfileId], references: [id])
   members          ConversationMember[]
 
+  @@index([householdId])
   @@map("conversations")
 }
 

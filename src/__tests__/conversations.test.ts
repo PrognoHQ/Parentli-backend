@@ -308,6 +308,30 @@ describe("createGroupConversation", () => {
     expect(profileACount).toBe(1);
   });
 
+  it("deduplicates repeated memberIds in input", async () => {
+    mockHouseholdMemberFindMany.mockResolvedValue([
+      { profileId: PROFILE_B },
+    ]);
+
+    setupTransaction();
+    mockConversationCreate.mockResolvedValue({ id: CONV_ID });
+    mockConversationMemberCreateMany.mockResolvedValue({ count: 2 });
+    mockConversationFindUniqueOrThrow.mockResolvedValue(makeConversation({ type: "group" }));
+
+    await createGroupConversation(HH_ID, PROFILE_A, {
+      memberIds: [
+        { kind: "profile", id: PROFILE_B },
+        { kind: "profile", id: PROFILE_B }, // duplicate
+      ],
+    });
+
+    const createManyCall = mockConversationMemberCreateMany.mock.calls[0][0];
+    const profileBCount = createManyCall.data.filter(
+      (d: any) => d.profileId === PROFILE_B
+    ).length;
+    expect(profileBCount).toBe(1);
+  });
+
   it("allows Family Circle members in group conversations", async () => {
     mockFamilyCircleMemberFindMany.mockResolvedValue([{ id: FC_MEMBER_ID }]);
 
