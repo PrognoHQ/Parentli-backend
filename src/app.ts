@@ -21,6 +21,7 @@ import eventRoutes from "./modules/events/routes";
 import expenseRoutes from "./modules/expenses/routes";
 import conversationRoutes from "./modules/conversations/routes";
 import messageRoutes from "./modules/messages/routes";
+import noteRoutes from "./modules/notes/routes";
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use("/api/events", eventRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/conversations", conversationRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/notes", noteRoutes);
 
 app.use(errorHandler);
 
