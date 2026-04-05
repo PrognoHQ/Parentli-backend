@@ -223,7 +223,7 @@ export async function getMessagesWithReadModel(
           select: {
             id: true,
             title: true,
-            text: true,
+            preview: true,
             child: { select: { firstName: true } },
           },
         })
@@ -339,10 +339,10 @@ export async function getMessagesWithReadModel(
             type: "note",
             preview: {
               id: note.id,
-              title: note.title,
-              previewText: note.text.length > 200
-                ? note.text.substring(0, 200) + "..."
-                : note.text,
+              title: note.title ?? "",
+              previewText: note.preview.length > 200
+                ? note.preview.substring(0, 200) + "..."
+                : note.preview,
               childName: note.child?.firstName ?? null,
             },
           };

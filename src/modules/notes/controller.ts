@@ -22,14 +22,14 @@ export async function create(
 
     const parsed = createNoteSchema.safeParse(req.body);
     if (!parsed.success) {
-      return next(new AppError(parsed.error.errors[0].message, 400));
+      return next(new AppError(parsed.error.issues[0].message, 400));
     }
 
-    const note = await noteService.createNote(
-      householdId,
+    const note = await noteService.createNote(householdId, {
       profileId,
-      parsed.data
-    );
+      familyCircleMemberId: req.familyCircleMemberId,
+      data: parsed.data,
+    });
 
     res.status(201).json(note);
   } catch (err) {
@@ -51,7 +51,7 @@ export async function list(
 
     const parsed = listNotesQuerySchema.safeParse(req.query);
     if (!parsed.success) {
-      return next(new AppError(parsed.error.errors[0].message, 400));
+      return next(new AppError(parsed.error.issues[0].message, 400));
     }
 
     const result = await noteService.listNotes(householdId, parsed.data);
@@ -74,7 +74,8 @@ export async function get(
       return next(new AppError("Authentication required.", 401));
     }
 
-    const note = await noteService.getNote(householdId, req.params.id);
+    const noteId = req.params.id as string;
+    const note = await noteService.getNote(householdId, noteId);
 
     res.json(note);
   } catch (err) {
@@ -89,21 +90,23 @@ export async function update(
 ): Promise<void> {
   try {
     const householdId = req.householdId;
+    const profileId = req.userId;
 
-    if (!req.userId || !householdId) {
+    if (!profileId || !householdId) {
       return next(new AppError("Authentication required.", 401));
     }
 
     const parsed = updateNoteSchema.safeParse(req.body);
     if (!parsed.success) {
-      return next(new AppError(parsed.error.errors[0].message, 400));
+      return next(new AppError(parsed.error.issues[0].message, 400));
     }
 
-    const note = await noteService.updateNote(
-      householdId,
-      req.params.id,
-      parsed.data
-    );
+    const noteId = req.params.id as string;
+    const note = await noteService.updateNote(householdId, noteId, {
+      profileId,
+      familyCircleMemberId: req.familyCircleMemberId,
+      data: parsed.data,
+    });
 
     res.json(note);
   } catch (err) {
@@ -118,12 +121,17 @@ export async function remove(
 ): Promise<void> {
   try {
     const householdId = req.householdId;
+    const profileId = req.userId;
 
-    if (!req.userId || !householdId) {
+    if (!profileId || !householdId) {
       return next(new AppError("Authentication required.", 401));
     }
 
-    const result = await noteService.deleteNote(householdId, req.params.id);
+    const noteId = req.params.id as string;
+    const result = await noteService.deleteNote(householdId, noteId, {
+      profileId,
+      familyCircleMemberId: req.familyCircleMemberId,
+    });
 
     res.json(result);
   } catch (err) {
