@@ -20,4 +20,7 @@ router.get("/:id", auth, tenant, canRead, controller.getDetail);
 // Phase 5B: List messages in a conversation
 router.get("/:id/messages", auth, tenant, canRead, messageController.listByConversation);
 
+// Phase 5C: Mark conversation as read
+router.post("/:id/read", auth, tenant, canWrite, controller.markRead);
+
 export default router;

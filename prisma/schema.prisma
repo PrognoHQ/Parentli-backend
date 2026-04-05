@@ -283,6 +283,10 @@ model Profile {
   sentMessages               Message[]                @relation("MessageSender")
   messageDeletions           MessageDeletion[]        @relation("MessageDeletionActor")
 
+  // Phase 5C: Reactions & Receipts
+  messageReactions           MessageReaction[]        @relation("MessageReactionActor")
+  messageReceipts            MessageReceipt[]         @relation("MessageReceiptRecipient")
+
   @@map("profiles")
 }
 
@@ -333,6 +337,10 @@ model Household {
   // Phase 5B: Messages
   messages                 Message[]
   messageDeletions         MessageDeletion[]
+
+  // Phase 5C: Reactions & Receipts
+  messageReactions         MessageReaction[]
+  messageReceipts          MessageReceipt[]
 
   @@map("households")
 }
@@ -614,6 +622,10 @@ model FamilyCircleMember {
   // Phase 5B: Messages
   sentMessages       Message[]            @relation("MessageFCSender")
   messageDeletions   MessageDeletion[]    @relation("MessageDeletionFCActor")
+
+  // Phase 5C: Reactions & Receipts
+  messageReactions   MessageReaction[]    @relation("MessageReactionFCActor")
+  messageReceipts    MessageReceipt[]     @relation("MessageReceiptFCRecipient")
 
   @@map("family_circle_members")
 }
@@ -934,6 +946,16 @@ enum MessageDeleteMode {
   for_everyone
 }
 
+enum MessageReactionActorKind {
+  profile
+  family_circle
+}
+
+enum MessageReceiptRecipientKind {
+  profile
+  family_circle
+}
+
 // --- Phase 5A: Conversations ---
 model Conversation {
   id                 String                    @id @default(uuid()) @db.Uuid
@@ -1001,6 +1023,8 @@ model Message {
   replyToMessage           Message?            @relation("MessageReplies", fields: [replyToMessageId], references: [id])
   replies                  Message[]           @relation("MessageReplies")
   deletions                MessageDeletion[]
+  reactions                MessageReaction[]
+  receipts                 MessageReceipt[]
 
   @@index([conversationId, createdAt])
   @@index([householdId])
@@ -1027,4 +1051,49 @@ model MessageDeletion {
   @@index([householdId])
   @@index([actorProfileId])
   @@map("message_deletions")
+}
+
+// --- Phase 5C: Message Reactions ---
+model MessageReaction {
+  id                         String                    @id @default(uuid()) @db.Uuid
+  householdId                String                    @map("household_id") @db.Uuid
+  messageId                  String                    @map("message_id") @db.Uuid
+  actorKind                  MessageReactionActorKind  @map("actor_kind")
+  actorProfileId             String?                   @map("actor_profile_id") @db.Uuid
+  actorFamilyCircleMemberId  String?                   @map("actor_family_circle_member_id") @db.Uuid
+  emoji                      String
+  createdAt                  DateTime                  @default(now()) @map("created_at")
+
+  household                Household           @relation(fields: [householdId], references: [id])
+  message                  Message             @relation(fields: [messageId], references: [id])
+  actorProfile             Profile?            @relation("MessageReactionActor", fields: [actorProfileId], references: [id])
+  actorFamilyCircleMember  FamilyCircleMember? @relation("MessageReactionFCActor", fields: [actorFamilyCircleMemberId], references: [id])
+
+  @@index([messageId])
+  @@index([householdId])
+  @@map("message_reactions")
+}
+
+// --- Phase 5C: Message Receipts ---
+model MessageReceipt {
+  id                            String                       @id @default(uuid()) @db.Uuid
+  householdId                   String                       @map("household_id") @db.Uuid
+  messageId                     String                       @map("message_id") @db.Uuid
+  recipientKind                 MessageReceiptRecipientKind  @map("recipient_kind")
+  recipientProfileId            String?                      @map("recipient_profile_id") @db.Uuid
+  recipientFamilyCircleMemberId String?                      @map("recipient_family_circle_member_id") @db.Uuid
+  deliveredAt                   DateTime?                    @map("delivered_at")
+  readAt                        DateTime?                    @map("read_at")
+  createdAt                     DateTime                     @default(now()) @map("created_at")
+  updatedAt                     DateTime                     @updatedAt @map("updated_at")
+
+  household                   Household           @relation(fields: [householdId], references: [id])
+  message                     Message             @relation(fields: [messageId], references: [id])
+  recipientProfile            Profile?            @relation("MessageReceiptRecipient", fields: [recipientProfileId], references: [id])
+  recipientFamilyCircleMember FamilyCircleMember? @relation("MessageReceiptFCRecipient", fields: [recipientFamilyCircleMemberId], references: [id])
+
+  @@index([messageId])
+  @@index([householdId])
+  @@index([recipientProfileId])
+  @@map("message_receipts")
 }

@@ -9,15 +9,20 @@ const mockConversationFindMany = vi.fn();
 const mockConversationFindUniqueOrThrow = vi.fn();
 const mockConversationCreate = vi.fn();
 const mockConversationMemberCreateMany = vi.fn();
+const mockConversationMemberFindMany = vi.fn();
 const mockHouseholdMemberFindMany = vi.fn();
 const mockFamilyCircleMemberFindMany = vi.fn();
 const mockTransaction = vi.fn();
+const mockQueryRaw = vi.fn();
 
 vi.mock("../lib/prisma", () => ({
   prisma: {
     conversation: {
       findFirst: (...args: unknown[]) => mockConversationFindFirst(...args),
       findMany: (...args: unknown[]) => mockConversationFindMany(...args),
+    },
+    conversationMember: {
+      findMany: (...args: unknown[]) => mockConversationMemberFindMany(...args),
     },
     householdMember: {
       findMany: (...args: unknown[]) => mockHouseholdMemberFindMany(...args),
@@ -26,6 +31,7 @@ vi.mock("../lib/prisma", () => ({
       findMany: (...args: unknown[]) => mockFamilyCircleMemberFindMany(...args),
     },
     $transaction: (...args: unknown[]) => mockTransaction(...args),
+    $queryRaw: (...args: unknown[]) => mockQueryRaw(...args),
   },
 }));
 
@@ -418,28 +424,91 @@ describe("createGroupConversation", () => {
 // ---------------------------------------------------------------------------
 
 describe("listConversations", () => {
-  it("returns conversations where profile is an active member", async () => {
-    const conversations = [makeConversation()];
-    mockConversationFindMany.mockResolvedValue(conversations);
+  it("returns conversation summaries with last message and unread count", async () => {
+    const now = new Date("2026-01-01T12:00:00Z");
+    mockQueryRaw.mockResolvedValue([
+      {
+        id: CONV_ID,
+        type: "coparent",
+        name: null,
+        purpose_badge: null,
+        pinned: true,
+        created_at: now,
+        updated_at: now,
+        last_message_id: "msg-1",
+        last_message_text: "Hello",
+        last_message_type: "text",
+        last_message_sender_kind: "profile",
+        last_message_sender_profile_id: PROFILE_A,
+        last_message_sender_fc_member_id: null,
+        last_message_at: now,
+        last_message_globally_deleted: false,
+        unread_count: BigInt(2),
+      },
+    ]);
+    mockConversationMemberFindMany.mockResolvedValue([
+      {
+        id: "cm-1",
+        conversationId: CONV_ID,
+        memberKind: "profile",
+        profileId: PROFILE_A,
+        familyCircleMemberId: null,
+        role: null,
+        profile: { id: PROFILE_A, firstName: "Alice", lastName: "A", avatarUrl: null },
+        familyCircleMember: null,
+      },
+    ]);
 
     const result = await listConversations(HH_ID, PROFILE_A);
 
-    expect(result).toEqual(conversations);
-    expect(mockConversationFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          householdId: HH_ID,
-          deletedAt: null,
-          members: {
-            some: {
-              profileId: PROFILE_A,
-              leftAt: null,
-            },
-          },
-        }),
-        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
-      })
-    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(CONV_ID);
+    expect(result[0].unreadCount).toBe(2);
+    expect(result[0].lastMessage).toBeTruthy();
+    expect(result[0].lastMessage!.id).toBe("msg-1");
+    expect(result[0].lastMessage!.text).toBe("Hello");
+    expect(result[0].members).toHaveLength(1);
+    expect(mockQueryRaw).toHaveBeenCalled();
+  });
+
+  it("returns empty array when no conversations", async () => {
+    mockQueryRaw.mockResolvedValue([]);
+
+    const result = await listConversations(HH_ID, PROFILE_A);
+
+    expect(result).toEqual([]);
+  });
+
+  it("returns null lastMessage for conversations with no messages", async () => {
+    const now = new Date("2026-01-01T12:00:00Z");
+    mockQueryRaw.mockResolvedValue([
+      {
+        id: CONV_ID,
+        type: "coparent",
+        name: null,
+        purpose_badge: null,
+        pinned: false,
+        created_at: now,
+        updated_at: now,
+        last_message_id: null,
+        last_message_text: null,
+        last_message_type: null,
+        last_message_sender_kind: null,
+        last_message_sender_profile_id: null,
+        last_message_sender_fc_member_id: null,
+        last_message_at: null,
+        last_message_globally_deleted: null,
+        unread_count: BigInt(0),
+      },
+    ]);
+    mockConversationMemberFindMany.mockResolvedValue([]);
+
+    const result = await listConversations(HH_ID, PROFILE_A);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].lastMessage).toBeNull();
+    expect(result[0].lastMessageAt).toBeNull();
+    expect(result[0].unreadCount).toBe(0);
   });
 });
 

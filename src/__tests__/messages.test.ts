@@ -14,6 +14,8 @@ const mockMessageUpdate = vi.fn();
 const mockMessageDeletionFindMany = vi.fn();
 const mockMessageDeletionUpsert = vi.fn();
 const mockConversationUpdate = vi.fn();
+const mockConversationMemberFindMany = vi.fn();
+const mockReceiptCreateMany = vi.fn();
 const mockTransaction = vi.fn();
 
 vi.mock("../lib/prisma", () => ({
@@ -99,6 +101,12 @@ function setupTransaction() {
         conversation: {
           update: mockConversationUpdate,
         },
+        conversationMember: {
+          findMany: mockConversationMemberFindMany,
+        },
+        messageReceipt: {
+          createMany: mockReceiptCreateMany,
+        },
         messageDeletion: {
           upsert: mockMessageDeletionUpsert,
         },
@@ -110,6 +118,9 @@ function setupTransaction() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: return sender only so receipt generation produces no receipts
+  mockConversationMemberFindMany.mockResolvedValue([makeMember()]);
+  mockReceiptCreateMany.mockResolvedValue({ count: 0 });
 });
 
 // ---------------------------------------------------------------------------
