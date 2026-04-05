@@ -10,6 +10,7 @@ const mockNoteFindMany = vi.fn();
 const mockNoteCount = vi.fn();
 const mockNoteFindFirst = vi.fn();
 const mockNoteUpdate = vi.fn();
+const mockFCMemberFindUnique = vi.fn();
 
 vi.mock("../lib/prisma", () => ({
   prisma: {
@@ -23,14 +24,26 @@ vi.mock("../lib/prisma", () => ({
       findFirst: (...args: unknown[]) => mockNoteFindFirst(...args),
       update: (...args: unknown[]) => mockNoteUpdate(...args),
     },
+    familyCircleMember: {
+      findUnique: (...args: unknown[]) => mockFCMemberFindUnique(...args),
+    },
   },
 }));
 
-import { createNote, listNotes, getNote, deleteNote } from "../modules/notes/service";
+import {
+  createNote,
+  listNotes,
+  getNote,
+  updateNote,
+  deleteNote,
+} from "../modules/notes/service";
 
 const HH_ID = "hh-111";
 const HH_ID_OTHER = "hh-999";
 const PROFILE_A = "profile-aaa";
+const PROFILE_B = "profile-bbb";
+const FC_MEMBER_A = "fc-member-aaa";
+const FC_MEMBER_B = "fc-member-bbb";
 const NOTE_ID = "note-111";
 const CHILD_ID = "child-111";
 
@@ -38,17 +51,51 @@ function makeNote(overrides: Record<string, unknown> = {}) {
   return {
     id: NOTE_ID,
     householdId: HH_ID,
+    authorKind: "profile",
+    authorProfileId: PROFILE_A,
+    authorFamilyCircleMemberId: null,
+    noteType: "general",
+    tag: null,
     childId: null,
-    createdByProfileId: PROFILE_A,
-    title: "Test Note",
-    text: "Note content here",
+    title: null,
+    preview: "Test note content",
+    fullContent: null,
+    important: false,
+    isFamilyCircle: false,
+    relationshipLabel: null,
+    hasAttachments: false,
     deletedAt: null,
     createdAt: new Date("2026-01-01T10:00:00Z"),
     updatedAt: new Date("2026-01-01T10:00:00Z"),
+    authorProfile: {
+      id: PROFILE_A,
+      firstName: "Alice",
+      lastName: "Smith",
+      avatarUrl: null,
+    },
+    authorFamilyCircleMember: null,
     child: null,
-    createdByProfile: { id: PROFILE_A, firstName: "Alice", lastName: "Smith" },
     ...overrides,
   };
+}
+
+function makeFCNote(overrides: Record<string, unknown> = {}) {
+  return makeNote({
+    authorKind: "family_circle",
+    authorProfileId: null,
+    authorFamilyCircleMemberId: FC_MEMBER_A,
+    isFamilyCircle: true,
+    relationshipLabel: "Grandmother",
+    authorProfile: null,
+    authorFamilyCircleMember: {
+      id: FC_MEMBER_A,
+      name: "Grandma Jane",
+      relationship: "Grandmother",
+      role: "contributor",
+      avatarUrl: null,
+    },
+    ...overrides,
+  });
 }
 
 beforeEach(() => {
@@ -60,21 +107,27 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("createNote", () => {
-  it("creates a note without child", async () => {
+  it("creates a profile-authored note without child", async () => {
     mockNoteCreate.mockResolvedValue(makeNote());
 
-    const result = await createNote(HH_ID, PROFILE_A, {
-      title: "Test Note",
-      text: "Note content here",
+    const result = await createNote(HH_ID, {
+      profileId: PROFILE_A,
+      data: {
+        noteType: "general" as const,
+        preview: "Test note content",
+      },
     });
 
-    expect(result.title).toBe("Test Note");
+    expect(result.authorKind).toBe("profile");
+    expect(result.authorProfileId).toBe(PROFILE_A);
     expect(mockNoteCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           householdId: HH_ID,
-          createdByProfileId: PROFILE_A,
-          title: "Test Note",
+          authorKind: "profile",
+          authorProfileId: PROFILE_A,
+          authorFamilyCircleMemberId: null,
+          preview: "Test note content",
         }),
       })
     );
@@ -83,13 +136,19 @@ describe("createNote", () => {
   it("creates a note with child", async () => {
     mockChildFindFirst.mockResolvedValue({ id: CHILD_ID, householdId: HH_ID });
     mockNoteCreate.mockResolvedValue(
-      makeNote({ childId: CHILD_ID, child: { id: CHILD_ID, firstName: "Emma" } })
+      makeNote({
+        childId: CHILD_ID,
+        child: { id: CHILD_ID, firstName: "Emma", emoji: null },
+      })
     );
 
-    const result = await createNote(HH_ID, PROFILE_A, {
-      title: "School Info",
-      text: "Details",
-      childId: CHILD_ID,
+    const result = await createNote(HH_ID, {
+      profileId: PROFILE_A,
+      data: {
+        noteType: "medical" as const,
+        preview: "Child health info",
+        childId: CHILD_ID,
+      },
     });
 
     expect(result.childId).toBe(CHILD_ID);
@@ -104,12 +163,76 @@ describe("createNote", () => {
     mockChildFindFirst.mockResolvedValue(null);
 
     await expect(
-      createNote(HH_ID, PROFILE_A, {
-        title: "Note",
-        text: "Content",
-        childId: "non-existent",
+      createNote(HH_ID, {
+        profileId: PROFILE_A,
+        data: {
+          noteType: "general" as const,
+          preview: "Content",
+          childId: "non-existent",
+        },
       })
     ).rejects.toThrow("Child not found.");
+  });
+
+  it("creates a family circle authored note", async () => {
+    mockFCMemberFindUnique.mockResolvedValue({
+      id: FC_MEMBER_A,
+      relationship: "Grandmother",
+    });
+    mockNoteCreate.mockResolvedValue(makeFCNote());
+
+    const result = await createNote(HH_ID, {
+      profileId: PROFILE_A,
+      familyCircleMemberId: FC_MEMBER_A,
+      data: {
+        noteType: "general" as const,
+        preview: "Note from grandma",
+      },
+    });
+
+    expect(result.authorKind).toBe("family_circle");
+    expect(result.authorFamilyCircleMemberId).toBe(FC_MEMBER_A);
+    expect(result.isFamilyCircle).toBe(true);
+    expect(result.relationshipLabel).toBe("Grandmother");
+
+    expect(mockNoteCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          authorKind: "family_circle",
+          authorProfileId: null,
+          authorFamilyCircleMemberId: FC_MEMBER_A,
+          isFamilyCircle: true,
+          relationshipLabel: "Grandmother",
+        }),
+      })
+    );
+  });
+
+  it("sets relationshipLabel to null when FC member has no relationship", async () => {
+    mockFCMemberFindUnique.mockResolvedValue({
+      id: FC_MEMBER_A,
+      relationship: null,
+    });
+    mockNoteCreate.mockResolvedValue(
+      makeFCNote({ relationshipLabel: null })
+    );
+
+    await createNote(HH_ID, {
+      profileId: PROFILE_A,
+      familyCircleMemberId: FC_MEMBER_A,
+      data: {
+        noteType: "general" as const,
+        preview: "Note content",
+      },
+    });
+
+    expect(mockNoteCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          relationshipLabel: null,
+        }),
+      })
+    );
   });
 });
 
@@ -118,7 +241,7 @@ describe("createNote", () => {
 // ---------------------------------------------------------------------------
 
 describe("listNotes", () => {
-  it("returns paginated notes", async () => {
+  it("returns paginated notes excluding soft-deleted", async () => {
     const notes = [makeNote(), makeNote({ id: "note-222" })];
     mockNoteFindMany.mockResolvedValue(notes);
     mockNoteCount.mockResolvedValue(2);
@@ -127,12 +250,15 @@ describe("listNotes", () => {
 
     expect(result.data).toHaveLength(2);
     expect(result.total).toBe(2);
+    expect(result.page).toBe(1);
+    expect(result.limit).toBe(20);
     expect(mockNoteFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           householdId: HH_ID,
           deletedAt: null,
         }),
+        orderBy: { createdAt: "desc" },
       })
     );
   });
@@ -151,6 +277,23 @@ describe("listNotes", () => {
       })
     );
   });
+
+  it("filters by childId when provided", async () => {
+    mockNoteFindMany.mockResolvedValue([]);
+    mockNoteCount.mockResolvedValue(0);
+
+    await listNotes(HH_ID, { page: 1, limit: 20, childId: CHILD_ID });
+
+    expect(mockNoteFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          householdId: HH_ID,
+          deletedAt: null,
+          childId: CHILD_ID,
+        }),
+      })
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -158,7 +301,7 @@ describe("listNotes", () => {
 // ---------------------------------------------------------------------------
 
 describe("getNote", () => {
-  it("returns a note by id", async () => {
+  it("returns a note by id scoped to household", async () => {
     mockNoteFindFirst.mockResolvedValue(makeNote());
 
     const result = await getNote(HH_ID, NOTE_ID);
@@ -189,15 +332,130 @@ describe("getNote", () => {
 });
 
 // ---------------------------------------------------------------------------
+// updateNote
+// ---------------------------------------------------------------------------
+
+describe("updateNote", () => {
+  it("updates a note when author is the owner (profile)", async () => {
+    const note = makeNote();
+    const updatedNote = makeNote({ preview: "Updated content", important: true });
+    mockNoteFindFirst.mockResolvedValue(note);
+    mockNoteUpdate.mockResolvedValue(updatedNote);
+
+    const result = await updateNote(HH_ID, NOTE_ID, {
+      profileId: PROFILE_A,
+      data: { preview: "Updated content", important: true },
+    });
+
+    expect(result.preview).toBe("Updated content");
+    expect(result.important).toBe(true);
+    expect(mockNoteUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: NOTE_ID },
+        data: expect.objectContaining({
+          preview: "Updated content",
+          important: true,
+        }),
+      })
+    );
+  });
+
+  it("updates a note when author is the owner (family circle)", async () => {
+    const note = makeFCNote();
+    const updatedNote = makeFCNote({ preview: "FC updated", tag: "important" });
+    mockNoteFindFirst.mockResolvedValue(note);
+    mockNoteUpdate.mockResolvedValue(updatedNote);
+
+    const result = await updateNote(HH_ID, NOTE_ID, {
+      profileId: PROFILE_A,
+      familyCircleMemberId: FC_MEMBER_A,
+      data: { preview: "FC updated", tag: "important" },
+    });
+
+    expect(result.preview).toBe("FC updated");
+    expect(result.tag).toBe("important");
+  });
+
+  it("rejects update by non-author profile", async () => {
+    const note = makeNote({ authorProfileId: PROFILE_A });
+    mockNoteFindFirst.mockResolvedValue(note);
+
+    await expect(
+      updateNote(HH_ID, NOTE_ID, {
+        profileId: PROFILE_B,
+        data: { preview: "Hacked content" },
+      })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
+  it("rejects update by non-author FC member", async () => {
+    const note = makeFCNote({ authorFamilyCircleMemberId: FC_MEMBER_A });
+    mockNoteFindFirst.mockResolvedValue(note);
+
+    await expect(
+      updateNote(HH_ID, NOTE_ID, {
+        profileId: PROFILE_B,
+        familyCircleMemberId: FC_MEMBER_B,
+        data: { preview: "Hacked content" },
+      })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
+  it("rejects profile user updating FC member note", async () => {
+    const note = makeFCNote();
+    mockNoteFindFirst.mockResolvedValue(note);
+
+    await expect(
+      updateNote(HH_ID, NOTE_ID, {
+        profileId: PROFILE_A,
+        data: { preview: "Trying to edit FC note" },
+      })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
+  it("throws 404 when note not found", async () => {
+    mockNoteFindFirst.mockResolvedValue(null);
+
+    await expect(
+      updateNote(HH_ID, "non-existent", {
+        profileId: PROFILE_A,
+        data: { preview: "Content" },
+      })
+    ).rejects.toThrow("Note not found.");
+  });
+
+  it("only updates provided fields", async () => {
+    const note = makeNote();
+    mockNoteFindFirst.mockResolvedValue(note);
+    mockNoteUpdate.mockResolvedValue(makeNote({ tag: "new-tag" }));
+
+    await updateNote(HH_ID, NOTE_ID, {
+      profileId: PROFILE_A,
+      data: { tag: "new-tag" },
+    });
+
+    const updateCall = mockNoteUpdate.mock.calls[0][0];
+    expect(updateCall.data).toEqual({ tag: "new-tag" });
+    expect(updateCall.data).not.toHaveProperty("preview");
+    expect(updateCall.data).not.toHaveProperty("important");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deleteNote
 // ---------------------------------------------------------------------------
 
 describe("deleteNote", () => {
-  it("soft-deletes a note", async () => {
+  it("soft-deletes a note by setting deletedAt", async () => {
     mockNoteFindFirst.mockResolvedValue(makeNote());
-    mockNoteUpdate.mockResolvedValue({ ...makeNote(), deletedAt: new Date() });
+    mockNoteUpdate.mockResolvedValue({
+      ...makeNote(),
+      deletedAt: new Date(),
+    });
 
-    const result = await deleteNote(HH_ID, NOTE_ID);
+    const result = await deleteNote(HH_ID, NOTE_ID, {
+      profileId: PROFILE_A,
+    });
 
     expect(result).toEqual({ success: true });
     expect(mockNoteUpdate).toHaveBeenCalledWith(
@@ -210,11 +468,55 @@ describe("deleteNote", () => {
     );
   });
 
+  it("rejects delete by non-author profile", async () => {
+    mockNoteFindFirst.mockResolvedValue(makeNote({ authorProfileId: PROFILE_A }));
+
+    await expect(
+      deleteNote(HH_ID, NOTE_ID, { profileId: PROFILE_B })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
+  it("rejects delete by non-author FC member", async () => {
+    mockNoteFindFirst.mockResolvedValue(
+      makeFCNote({ authorFamilyCircleMemberId: FC_MEMBER_A })
+    );
+
+    await expect(
+      deleteNote(HH_ID, NOTE_ID, {
+        profileId: PROFILE_B,
+        familyCircleMemberId: FC_MEMBER_B,
+      })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
+  it("rejects profile user deleting FC member note", async () => {
+    mockNoteFindFirst.mockResolvedValue(makeFCNote());
+
+    await expect(
+      deleteNote(HH_ID, NOTE_ID, { profileId: PROFILE_A })
+    ).rejects.toThrow("You can only modify your own notes.");
+  });
+
   it("throws 404 when note not found", async () => {
     mockNoteFindFirst.mockResolvedValue(null);
 
-    await expect(deleteNote(HH_ID, "non-existent")).rejects.toThrow(
-      "Note not found."
-    );
+    await expect(
+      deleteNote(HH_ID, "non-existent", { profileId: PROFILE_A })
+    ).rejects.toThrow("Note not found.");
+  });
+
+  it("FC author can delete their own note", async () => {
+    mockNoteFindFirst.mockResolvedValue(makeFCNote());
+    mockNoteUpdate.mockResolvedValue({
+      ...makeFCNote(),
+      deletedAt: new Date(),
+    });
+
+    const result = await deleteNote(HH_ID, NOTE_ID, {
+      profileId: PROFILE_A,
+      familyCircleMemberId: FC_MEMBER_A,
+    });
+
+    expect(result).toEqual({ success: true });
   });
 });

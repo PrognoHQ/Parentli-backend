@@ -282,7 +282,7 @@ describe("getMessagesWithReadModel — shared content previews", () => {
       {
         id: "note-111",
         title: "School info",
-        text: longText,
+        preview: longText,
         child: { firstName: "Jake" },
       },
     ]);
