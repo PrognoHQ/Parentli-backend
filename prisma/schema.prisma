@@ -279,6 +279,10 @@ model Profile {
   createdConversations       Conversation[]           @relation("ConversationCreator")
   conversationMemberships    ConversationMember[]     @relation("ConversationMemberProfile")
 
+  // Phase 5B: Messages
+  sentMessages               Message[]                @relation("MessageSender")
+  messageDeletions           MessageDeletion[]        @relation("MessageDeletionActor")
+
   @@map("profiles")
 }
 
@@ -325,6 +329,10 @@ model Household {
   // Phase 5: Conversations
   conversations            Conversation[]
   conversationMembers      ConversationMember[]
+
+  // Phase 5B: Messages
+  messages                 Message[]
+  messageDeletions         MessageDeletion[]
 
   @@map("households")
 }
@@ -602,6 +610,10 @@ model FamilyCircleMember {
   childAssignments   FamilyCircleMemberChild[]
   activityLogs       FamilyCircleActivityLog[]
   conversationMemberships ConversationMember[]
+
+  // Phase 5B: Messages
+  sentMessages       Message[]            @relation("MessageFCSender")
+  messageDeletions   MessageDeletion[]    @relation("MessageDeletionFCActor")
 
   @@map("family_circle_members")
 }
@@ -902,6 +914,26 @@ model ExpenseSeries {
   @@map("expense_series")
 }
 
+// --- Phase 5B Enums ---
+enum MessageSenderKind {
+  profile
+  family_circle
+}
+
+enum MessageType {
+  text
+  expense
+  event
+  image
+  file
+  note
+}
+
+enum MessageDeleteMode {
+  for_me
+  for_everyone
+}
+
 // --- Phase 5A: Conversations ---
 model Conversation {
   id                 String                    @id @default(uuid()) @db.Uuid
@@ -918,6 +950,7 @@ model Conversation {
   household        Household            @relation(fields: [householdId], references: [id])
   createdByProfile Profile?             @relation("ConversationCreator", fields: [createdByProfileId], references: [id])
   members          ConversationMember[]
+  messages         Message[]
 
   @@index([householdId])
   @@map("conversations")
@@ -943,4 +976,54 @@ model ConversationMember {
   familyCircleMember FamilyCircleMember? @relation(fields: [familyCircleMemberId], references: [id])
 
   @@map("conversation_members")
+}
+
+// --- Phase 5B: Messages ---
+model Message {
+  id                         String            @id @default(uuid()) @db.Uuid
+  householdId                String            @map("household_id") @db.Uuid
+  conversationId             String            @map("conversation_id") @db.Uuid
+  senderKind                 MessageSenderKind @map("sender_kind")
+  senderProfileId            String?           @map("sender_profile_id") @db.Uuid
+  senderFamilyCircleMemberId String?           @map("sender_family_circle_member_id") @db.Uuid
+  type                       MessageType       @default(text)
+  text                       String?
+  replyToMessageId           String?           @map("reply_to_message_id") @db.Uuid
+  metadata                   Json              @default("{}")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  updatedAt                  DateTime          @updatedAt @map("updated_at")
+  editedAt                   DateTime?         @map("edited_at")
+
+  household                Household           @relation(fields: [householdId], references: [id])
+  conversation             Conversation        @relation(fields: [conversationId], references: [id])
+  senderProfile            Profile?            @relation("MessageSender", fields: [senderProfileId], references: [id])
+  senderFamilyCircleMember FamilyCircleMember? @relation("MessageFCSender", fields: [senderFamilyCircleMemberId], references: [id])
+  replyToMessage           Message?            @relation("MessageReplies", fields: [replyToMessageId], references: [id])
+  replies                  Message[]           @relation("MessageReplies")
+  deletions                MessageDeletion[]
+
+  @@index([conversationId, createdAt])
+  @@index([householdId])
+  @@map("messages")
+}
+
+// --- Phase 5B: Message Deletions ---
+model MessageDeletion {
+  id                         String            @id @default(uuid()) @db.Uuid
+  householdId                String            @map("household_id") @db.Uuid
+  messageId                  String            @map("message_id") @db.Uuid
+  actorKind                  MessageSenderKind @map("actor_kind")
+  actorProfileId             String?           @map("actor_profile_id") @db.Uuid
+  actorFamilyCircleMemberId  String?           @map("actor_family_circle_member_id") @db.Uuid
+  deleteMode                 MessageDeleteMode @map("delete_mode")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+
+  household                Household           @relation(fields: [householdId], references: [id])
+  message                  Message             @relation(fields: [messageId], references: [id])
+  actorProfile             Profile?            @relation("MessageDeletionActor", fields: [actorProfileId], references: [id])
+  actorFamilyCircleMember  FamilyCircleMember? @relation("MessageDeletionFCActor", fields: [actorFamilyCircleMemberId], references: [id])
+
+  @@unique([messageId, actorProfileId])
+  @@index([householdId])
+  @@map("message_deletions")
 }
