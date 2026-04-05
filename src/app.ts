@@ -19,6 +19,7 @@ import familyCircleRoutes from "./modules/family-circle/routes";
 import emergencyCardRoutes from "./modules/emergency-card/routes";
 import eventRoutes from "./modules/events/routes";
 import expenseRoutes from "./modules/expenses/routes";
+import conversationRoutes from "./modules/conversations/routes";
 
 const app = express();
 
@@ -49,6 +50,7 @@ app.use("/api/family-circle", familyCircleRoutes);
 app.use("/api/emergency-card", emergencyCardRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/conversations", conversationRoutes);
 
 app.use(errorHandler);
 

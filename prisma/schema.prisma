@@ -209,6 +209,24 @@ enum ExpenseTimelineColor {
   muted
 }
 
+// --- Phase 5 Enums ---
+enum ConversationType {
+  coparent
+  group
+}
+
+enum ConversationPurposeBadge {
+  coordination
+  medical
+  school
+  general
+}
+
+enum ConversationMemberKind {
+  profile
+  family_circle
+}
+
 // --- Profiles ---
 // No household_id - profiles are cross-household
 model Profile {
@@ -257,6 +275,10 @@ model Profile {
   expenseTimelineEntries     ExpenseTimelineEntry[]   @relation("ExpenseTimelineActor")
   createdExpenseSeries       ExpenseSeries[]          @relation("ExpenseSeriesCreator")
 
+  // Phase 5: Conversations
+  createdConversations       Conversation[]           @relation("ConversationCreator")
+  conversationMemberships    ConversationMember[]     @relation("ConversationMemberProfile")
+
   @@map("profiles")
 }
 
@@ -299,6 +321,10 @@ model Household {
   expenses                 Expense[]
   expenseTimelineEntries   ExpenseTimelineEntry[]
   expenseSeries            ExpenseSeries[]
+
+  // Phase 5: Conversations
+  conversations            Conversation[]
+  conversationMembers      ConversationMember[]
 
   @@map("households")
 }
@@ -575,6 +601,7 @@ model FamilyCircleMember {
   joinedProfile      Profile?                   @relation("JoinedFamilyCircleMembers", fields: [joinedProfileId], references: [id])
   childAssignments   FamilyCircleMemberChild[]
   activityLogs       FamilyCircleActivityLog[]
+  conversationMemberships ConversationMember[]
 
   @@map("family_circle_members")
 }
@@ -873,4 +900,46 @@ model ExpenseSeries {
   @@index([householdId])
   @@index([householdId, paused])
   @@map("expense_series")
+}
+
+// --- Phase 5A: Conversations ---
+model Conversation {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  householdId        String                    @map("household_id") @db.Uuid
+  type               ConversationType
+  name               String?
+  purposeBadge       ConversationPurposeBadge? @map("purpose_badge")
+  pinned             Boolean                   @default(false)
+  createdByProfileId String?                   @map("created_by_profile_id") @db.Uuid
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
+  deletedAt          DateTime?                 @map("deleted_at")
+
+  household        Household            @relation(fields: [householdId], references: [id])
+  createdByProfile Profile?             @relation("ConversationCreator", fields: [createdByProfileId], references: [id])
+  members          ConversationMember[]
+
+  @@map("conversations")
+}
+
+// --- Phase 5A: Conversation Members ---
+model ConversationMember {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  householdId          String                  @map("household_id") @db.Uuid
+  conversationId       String                  @map("conversation_id") @db.Uuid
+  memberKind           ConversationMemberKind  @map("member_kind")
+  profileId            String?                 @map("profile_id") @db.Uuid
+  familyCircleMemberId String?                 @map("family_circle_member_id") @db.Uuid
+  role                 String?
+  joinedAt             DateTime                @default(now()) @map("joined_at")
+  leftAt               DateTime?               @map("left_at")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  household          Household           @relation(fields: [householdId], references: [id])
+  conversation       Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  profile            Profile?            @relation("ConversationMemberProfile", fields: [profileId], references: [id])
+  familyCircleMember FamilyCircleMember? @relation(fields: [familyCircleMemberId], references: [id])
+
+  @@map("conversation_members")
 }
