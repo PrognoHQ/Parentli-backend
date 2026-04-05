@@ -118,7 +118,14 @@ export async function createGroupConversation(
     );
   }
 
-  const memberIds = data.memberIds ?? [];
+  // Deduplicate memberIds by kind+id to prevent P2002 errors
+  const seen = new Set<string>();
+  const memberIds = (data.memberIds ?? []).filter((m) => {
+    const key = `${m.kind}:${m.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   // Validate member kinds
   for (const m of memberIds) {
