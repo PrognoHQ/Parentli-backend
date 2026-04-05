@@ -52,12 +52,14 @@ const replySelect = {
  */
 async function verifyConversationMembership(
   conversationId: string,
-  profileId: string
+  profileId: string,
+  householdId: string
 ) {
   const member = await prisma.conversationMember.findFirst({
     where: {
       conversationId,
       profileId,
+      householdId,
       leftAt: null,
     },
   });
@@ -91,7 +93,7 @@ export async function sendMessage(
   }
 
   // Validate sender is active member
-  await verifyConversationMembership(data.conversationId, profileId);
+  await verifyConversationMembership(data.conversationId, profileId, householdId);
 
   // Validate reply target if provided
   if (data.replyToMessageId) {
@@ -165,30 +167,21 @@ export async function listMessages(
   }
 
   // Validate requester is active member
-  await verifyConversationMembership(conversationId, profileId);
+  await verifyConversationMembership(conversationId, profileId, householdId);
 
   const { page, limit } = query;
 
-  // Get message IDs deleted "for me" by this actor
-  const deletedForMe = await prisma.messageDeletion.findMany({
-    where: {
-      actorProfileId: profileId,
-      message: {
-        conversationId,
-        householdId,
-      },
-    },
-    select: { messageId: true },
-  });
-
-  const deletedMessageIds = deletedForMe.map((d) => d.messageId);
-
+  // Exclude messages this actor has deleted (both for_me and for_everyone).
+  // for_me: only hidden from this actor. for_everyone: sender already nulled
+  // the text, but we also hide the tombstone from their own view.
   const where = {
     conversationId,
     householdId,
-    ...(deletedMessageIds.length > 0
-      ? { id: { notIn: deletedMessageIds } }
-      : {}),
+    deletions: {
+      none: {
+        actorProfileId: profileId,
+      },
+    },
   };
 
   const [data, total] = await Promise.all([
@@ -230,7 +223,7 @@ export async function deleteMessage(
   }
 
   // Verify actor is active member of the conversation
-  await verifyConversationMembership(message.conversationId, profileId);
+  await verifyConversationMembership(message.conversationId, profileId, householdId);
 
   if (mode === "for_me") {
     // Create deletion record — idempotent via upsert on unique constraint
