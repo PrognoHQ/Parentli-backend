@@ -4,6 +4,8 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   householdId?: string;
   membershipRole?: string;
+  familyCircleMemberId?: string;
+  familyCircleRole?: string;
 }
 
 export class AppError extends Error {

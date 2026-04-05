@@ -1,17 +1,22 @@
 import { z } from "zod";
 
 export const createNoteSchema = z.object({
-  title: z.string().min(1).max(500),
-  text: z.string().min(1).max(50000),
+  noteType: z.enum(["report", "medical", "educational", "therapy", "general"]),
   childId: z.string().uuid().optional(),
+  title: z.string().min(1).max(500).optional(),
+  preview: z.string().min(3).max(5000),
+  fullContent: z.string().max(50000).optional(),
+  tag: z.string().max(100).optional(),
+  important: z.boolean().optional(),
 });
 
 export type CreateNoteInput = z.infer<typeof createNoteSchema>;
 
 export const updateNoteSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
-  text: z.string().min(1).max(50000).optional(),
-  childId: z.string().uuid().nullable().optional(),
+  preview: z.string().min(3).max(5000).optional(),
+  fullContent: z.string().max(50000).nullable().optional(),
+  tag: z.string().max(100).nullable().optional(),
+  important: z.boolean().optional(),
 });
 
 export type UpdateNoteInput = z.infer<typeof updateNoteSchema>;

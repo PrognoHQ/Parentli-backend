@@ -30,6 +30,8 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "expenses:reimburse",
     "conversations:read",
     "conversations:write",
+    "notes:read",
+    "notes:write",
   ],
   coparent: [
     "children:read",
@@ -52,17 +54,21 @@ const PARENT_CAPABILITIES: Record<string, string[]> = {
     "expenses:reimburse",
     "conversations:read",
     "conversations:write",
+    "notes:read",
+    "notes:write",
   ],
 };
 
 const FAMILY_CIRCLE_CAPABILITIES: Record<string, string[]> = {
-  viewer: ["children:read"],
-  contributor: ["children:read", "school_care:read"],
+  viewer: ["children:read", "notes:read"],
+  contributor: ["children:read", "school_care:read", "notes:read", "notes:write"],
   carer: [
     "children:read",
     "medical:read",
     "emergency:read",
     "school_care:read",
+    "notes:read",
+    "notes:write",
   ],
 };
 
