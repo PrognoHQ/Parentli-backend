@@ -23,3 +23,7 @@ export const deleteMessageSchema = z.object({
 });
 
 export type DeleteMessageInput = z.infer<typeof deleteMessageSchema>;
+
+export const reactionSchema = z.object({
+  emoji: z.string().min(1).max(32),
+});

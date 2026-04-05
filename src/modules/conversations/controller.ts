@@ -1,6 +1,7 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest, AppError } from "../../types";
 import * as conversationService from "./service";
+import { markConversationRead } from "../messages/receipts";
 import { createGroupConversationSchema } from "./validators";
 
 export async function getOrCreateCoparent(
@@ -85,6 +86,26 @@ export async function getDetail(
       req.userId
     );
     res.json(conversation);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markRead(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!req.userId || !req.householdId)
+      throw new AppError("Not authenticated or no household.", 401);
+
+    const result = await markConversationRead(
+      req.householdId,
+      req.userId,
+      req.params.id as string
+    );
+    res.json(result);
   } catch (err) {
     next(err);
   }

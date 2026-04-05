@@ -46,11 +46,29 @@ const replySelect = {
   },
 } as const;
 
+const reactionsSelect = {
+  reactions: {
+    select: {
+      id: true,
+      emoji: true,
+      actorKind: true,
+      actorProfileId: true,
+      actorFamilyCircleMemberId: true,
+      actorProfile: {
+        select: { id: true, firstName: true, lastName: true },
+      },
+      actorFamilyCircleMember: {
+        select: { id: true, name: true },
+      },
+    },
+  },
+} as const;
+
 /**
  * Verify that a profile is an active member of a conversation.
  * Returns the conversation member record or throws 403.
  */
-async function verifyConversationMembership(
+export async function verifyConversationMembership(
   conversationId: string,
   profileId: string,
   householdId: string
@@ -113,7 +131,7 @@ export async function sendMessage(
     }
   }
 
-  // Create message and touch conversation updatedAt in a transaction
+  // Create message, generate receipts, and touch conversation updatedAt in a transaction
   const message = await prisma.$transaction(async (tx) => {
     const created = await tx.message.create({
       data: {
@@ -130,6 +148,29 @@ export async function sendMessage(
         ...replySelect,
       },
     });
+
+    // Generate receipt rows for every other active conversation member (not sender)
+    const members = await tx.conversationMember.findMany({
+      where: {
+        conversationId: data.conversationId,
+        householdId,
+        leftAt: null,
+      },
+    });
+
+    const receiptRows = members
+      .filter((m) => m.profileId !== profileId)
+      .map((m) => ({
+        householdId,
+        messageId: created.id,
+        recipientKind: m.memberKind as "profile" | "family_circle",
+        recipientProfileId: m.profileId,
+        recipientFamilyCircleMemberId: m.familyCircleMemberId,
+      }));
+
+    if (receiptRows.length > 0) {
+      await tx.messageReceipt.createMany({ data: receiptRows });
+    }
 
     // Touch conversation updatedAt for sort ordering
     await tx.conversation.update({
@@ -184,12 +225,13 @@ export async function listMessages(
     },
   };
 
-  const [data, total] = await Promise.all([
+  const [messages, total] = await Promise.all([
     prisma.message.findMany({
       where,
       include: {
         ...senderSelect,
         ...replySelect,
+        ...reactionsSelect,
       },
       orderBy: { createdAt: "asc" as const },
       skip: (page - 1) * limit,
@@ -197,6 +239,15 @@ export async function listMessages(
     }),
     prisma.message.count({ where }),
   ]);
+
+  // Suppress reactions on globally deleted messages
+  const data = messages.map((msg) => {
+    const meta = msg.metadata as Record<string, unknown>;
+    if (meta?.deleted === true) {
+      return { ...msg, reactions: [] };
+    }
+    return msg;
+  });
 
   return { data, total, page, limit };
 }

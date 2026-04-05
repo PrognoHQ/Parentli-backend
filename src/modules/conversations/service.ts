@@ -1,6 +1,7 @@
 import { prisma } from "../../lib/prisma";
 import { AppError } from "../../types";
 import { Prisma } from "@prisma/client";
+import { getConversationSummaries, ConversationSummary } from "./queries";
 
 const VALID_PURPOSE_BADGES = [
   "coordination",
@@ -249,49 +250,8 @@ export async function createGroupConversation(
 export async function listConversations(
   householdId: string,
   profileId: string
-) {
-  return prisma.conversation.findMany({
-    where: {
-      householdId,
-      deletedAt: null,
-      members: {
-        some: {
-          profileId,
-          leftAt: null,
-        },
-      },
-    },
-    include: {
-      members: {
-        where: { leftAt: null },
-        select: {
-          id: true,
-          memberKind: true,
-          profileId: true,
-          familyCircleMemberId: true,
-          role: true,
-          profile: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatarUrl: true,
-            },
-          },
-          familyCircleMember: {
-            select: {
-              id: true,
-              name: true,
-              relationship: true,
-              role: true,
-              avatarUrl: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
-  });
+): Promise<ConversationSummary[]> {
+  return getConversationSummaries(householdId, profileId);
 }
 
 export async function getConversationDetail(
